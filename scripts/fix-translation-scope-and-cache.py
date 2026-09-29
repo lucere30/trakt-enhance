@@ -18,22 +18,15 @@ def require_replace(text, old, new, label):
     return text.replace(old, new, 1)
 
 
-def find_top_level_function_ranges(source, name):
-    marker = f"function {name}("
-    positions = []
-    cursor = 0
+def remove_function_declarations(source, name):
+    """Remove every top-level declaration of name, including export function."""
+    pattern = re.compile(rf"(?m)^(?:export\s+)?function\s+{re.escape(name)}\s*\(")
     while True:
-        index = source.find(marker, cursor)
-        if index < 0:
-            break
-        line_start = source.rfind("\n", 0, index) + 1
-        if source[line_start:index].strip() == "":
-            positions.append(index)
-        cursor = index + len(marker)
-
-    ranges = []
-    for start in positions:
-        brace_start = source.find("{", start)
+        match = pattern.search(source)
+        if not match:
+            return source
+        start = match.start()
+        brace_start = source.find("{", match.end())
         if brace_start < 0:
             raise SystemExit(f"Cannot locate body for {name}")
         depth = 0
@@ -62,27 +55,24 @@ def find_top_level_function_ranges(source, name):
         if end is None:
             raise SystemExit(f"Unbalanced braces in {name}")
         line_end = source.find("\n", end)
-        ranges.append((start, len(source) if line_end < 0 else line_end + 1))
-    return ranges
-
-
-def dedupe_top_level_function(source, name):
-    ranges = find_top_level_function_ranges(source, name)
-    if len(ranges) <= 1:
-        return source
-    for start, end in reversed(ranges[1:]):
-        source = source[:start] + source[end:]
-    return source
+        if line_end < 0:
+            line_end = len(source)
+        else:
+            line_end += 1
+        source = source[:start] + source[line_end:]
 
 
 def insert_before(text, pattern, block, label):
-    if block.strip() in text:
-        return text
     m = re.search(pattern, text, re.MULTILINE)
     if not m:
         raise SystemExit(f"Anchor not found: {label}")
     return text[:m.start()] + block + text[m.start():]
 
+
+# This is the only script that owns translation-scope/cache customization.
+# It is deliberately self-contained and idempotent: every run first removes
+# our helper declarations (including export variants), then installs exactly
+# one canonical implementation. No second cleanup patch is required.
 
 # Normalize the argumentFields array after the legacy EplayerX restoration and
 # custom controls. Rebuilding this small declarative section avoids fragile
@@ -112,17 +102,14 @@ argument_fields = '''const argumentFields = [
 manifest = manifest[:start] + argument_fields + manifest[end:]
 write("module-manifest.mjs", manifest)
 
-# Media scope and cache gating. The cache remains content-based; scope decides
-# whether a cached translation is allowed to be read/applied for this request.
 helper = read("shared/trakt-translation-helper.mjs")
-# Make this script self-healing even if another workflow step already inserted
-# these helpers. This removes the ordering dependency between normalization and
-# this patch and makes the patch idempotent by itself.
+# Remove any previous/custom declaration variants before installing the one
+# canonical implementation. This specifically handles upstream `export`
+# declarations, which the old deduper failed to recognize.
 for helper_name in ("isChineseProductionRef", "shouldTranslateMediaRef"):
-    helper = dedupe_top_level_function(helper, helper_name)
+    helper = remove_function_declarations(helper, helper_name)
 
-if "function isChineseProductionRef(" not in helper:
-    helper = insert_before(helper, r"(?m)^function applyTranslation\(", r'''function isChineseProductionRef(ref) {
+helper_block = r'''function isChineseProductionRef(ref) {
     const language = String(ref?.language ?? "").trim().toLowerCase();
     const rawCountry = ref?.country;
     const countries = Array.isArray(rawCountry) ? rawCountry : [rawCountry];
@@ -138,7 +125,8 @@ function shouldTranslateMediaRef(ref) {
     return scope !== "chinese_only" || isChineseProductionRef(ref);
 }
 
-''', "media scope helpers")
+'''
+helper = insert_before(helper, r"(?m)^function applyTranslation\(", helper_block, "canonical media scope helpers")
 
 if "language: item?.show?.language ?? null" not in helper:
     helper = require_replace(helper, "        sourceTitle: episode?.title ?? null,\n        availableTranslations:", "        sourceTitle: episode?.title ?? null,\n        language: item?.show?.language ?? null,\n        country: item?.show?.country ?? null,\n        availableTranslations:", "episode language inheritance")
@@ -158,16 +146,18 @@ if "const translationRefsByType = createMediaCollection(MEDIA_CONFIG);" not in h
 helper = helper.replace("hydrateFromBackend(cache, refsByType, MEDIA_CONFIG, backendState)", "hydrateFromBackend(cache, translationRefsByType, MEDIA_CONFIG, backendState)")
 helper = helper.replace("fetchBulkTranslationsForMissing(cache, refsByType, backendState)", "fetchBulkTranslationsForMissing(cache, translationRefsByType, backendState)")
 helper = helper.replace("getMissingRefs(cache, mediaType, refsByType[mediaType])", "getMissingRefs(cache, mediaType, translationRefsByType[mediaType])")
-if "isChineseProductionRef," not in helper:
+
+if "isChineseProductionRef,\n" not in helper:
     helper = require_replace(helper, "    isPosterImageReplacementUserAgent,\n", "    isChineseProductionRef,\n    isPosterImageReplacementUserAgent,\n", "helper export")
 
-for helper_name in ("isChineseProductionRef", "shouldTranslateMediaRef"):
-    helper = dedupe_top_level_function(helper, helper_name)
+if len(re.findall(r"(?m)^function\s+isChineseProductionRef\s*\(", helper)) != 1:
+    raise SystemExit("Expected exactly one isChineseProductionRef declaration")
+if len(re.findall(r"(?m)^function\s+shouldTranslateMediaRef\s*\(", helper)) != 1:
+    raise SystemExit("Expected exactly one shouldTranslateMediaRef declaration")
 write("shared/trakt-translation-helper.mjs", helper)
 
-# Detail endpoints gate both backend/cache translation and Google fallback.
 media = read("features/media-translation.mjs")
-if "const shouldTranslate = traktTranslationHelper.shouldTranslateMediaRef" not in media:
+if "const translationRef = { ...ref, language:" not in media:
     media = require_replace(media, """    const cache = cacheUtils.loadCache(context.env);
     const backendState = traktTranslationHelper.createBackendState(traktTranslationHelper.MEDIA_CONFIG);
     let cacheChanged = false;
@@ -189,7 +179,6 @@ if "const shouldTranslate = traktTranslationHelper.shouldTranslateMediaRef" not 
     try {""", "detail scope guard")
 write("features/media-translation.mjs", media)
 
-# People pages: in chinese_only mode, translate only when their parent media is Chinese.
 people = read("features/people-translation.mjs")
 if "async function shouldTranslatePeopleTarget(" not in people:
     people = insert_before(people, r"(?m)^async function handleMediaPeopleList\(\) \{", r'''function isChineseOnlyScope() {
@@ -227,9 +216,11 @@ if "await shouldTranslatePeopleTarget(target)" not in people:
     const cache = cacheUtils.loadPeopleTranslationCache(context.env);""", "people list scope guard")
 for name in ["handlePersonMediaCreditsList", "handlePeopleSearchList", "handlePeopleDetail"]:
     marker = f"async function {name}() {{\n"
-    guard = '    if (isChineseOnlyScope()) return { type: "passThrough" };\n'
-    if marker in people and guard.strip() not in people[people.index(marker):people.index(marker) + 180]:
-        people = people.replace(marker, marker + guard, 1)
+    if marker in people:
+        start_pos = people.find(marker)
+        prefix = people[start_pos:start_pos + 500]
+        if "translationScope" not in prefix:
+            people = people.replace(marker, marker + '    if (isChineseOnlyScope()) return { type: "passThrough" };\n', 1)
 write("features/people-translation.mjs", people)
 
-print("Translation scope, cache safety, detail gating, and people gating applied.")
+print("Translation scope/cache customization applied as one idempotent layer.")
