@@ -7,6 +7,7 @@ on:
   push:
     paths:
       - .github/workflows/sync-upstream.yml
+      - scripts/apply-customizations.py
 
 permissions:
   contents: write
@@ -54,6 +55,9 @@ jobs:
           grep -R -q 'eplayerxButtonOrder' "$source_path"
           grep -q 'eplayerx: 1' "$source_path/argument.mjs"
 
+      - name: Apply custom feature controls and translation scope
+        run: python3 scripts/apply-customizations.py
+
       - name: Install dependencies
         working-directory: upstream
         run: npm ci
@@ -61,6 +65,20 @@ jobs:
       - name: Build upstream plugin with EplayerX restored
         working-directory: upstream
         run: npm run build:trakt
+
+      - name: Validate custom feature controls
+        working-directory: upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="trakt_simplified_chinese/src"
+          grep -q 'key: "translationScope"' "$src/module-manifest.mjs"
+          grep -q 'key: "historyRequestEnhancementEnabled"' "$src/module-manifest.mjs"
+          grep -q 'key: "playerInjectionEnabled"' "$src/module-manifest.mjs"
+          grep -q 'function isChineseProductionRef' "$src/shared/trakt-translation-helper.mjs"
+          grep -q 'historyRequestEnhancementEnabled' "$src/features/history-episodes-merged-by-show.mjs"
+          grep -q 'playerInjectionEnabled' "$src/features/player-injection-sofatime.mjs"
+          grep -q 'playerInjectionEnabled' "$src/features/player-injection-trakt.mjs"
 
       - name: Publish plugin and mirror runtime assets
         shell: bash
@@ -78,6 +96,9 @@ jobs:
           test -s trakt_simplified_chinese/trakt_simplified_chinese.js
           test -s trakt_simplified_chinese/images/trakt.webp
           grep -q 'EplayerX' trakt_simplified_chinese/trakt_simplified_chinese.plugin
+          grep -q 'translationScope' trakt_simplified_chinese/trakt_simplified_chinese.plugin
+          grep -q 'historyRequestEnhancementEnabled' trakt_simplified_chinese/trakt_simplified_chinese.plugin
+          grep -q 'playerInjectionEnabled' trakt_simplified_chinese/trakt_simplified_chinese.plugin
           grep -q 'lucere30/trakt-enhance/main/trakt_simplified_chinese/trakt_simplified_chinese.js' trakt_simplified_chinese/trakt_simplified_chinese.plugin
           grep -q 'lucere30/trakt-enhance/main/trakt_simplified_chinese/images/trakt.webp' trakt_simplified_chinese/trakt_simplified_chinese.plugin
           grep -q 'github.com/lucere30/trakt-enhance' trakt_simplified_chinese/trakt_simplified_chinese.plugin
