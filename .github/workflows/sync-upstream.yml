@@ -1,4 +1,4 @@
-# Sync pipeline v4: upstream-first, single translation customization layer, validate-before-publish.
+# Sync pipeline v5: upstream-first, isolated translation policy, validate-before-build.
 name: Sync upstream Trakt plugin
 
 on:
@@ -10,6 +10,7 @@ on:
       - .github/workflows/sync-upstream.yml
       - scripts/apply-customizations.py
       - scripts/fix-translation-scope-and-cache.py
+      - scripts/validate-translation-architecture.py
 
 permissions:
   contents: write
@@ -60,26 +61,29 @@ jobs:
       - name: Apply custom feature controls
         run: python3 scripts/apply-customizations.py
 
-      - name: Apply single translation scope and cache layer
+      - name: Apply isolated translation scope and cache policy
         run: python3 scripts/fix-translation-scope-and-cache.py
 
-      - name: Static validation before build
+      - name: Prebuild architecture validation
         working-directory: upstream
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile ../scripts/apply-customizations.py ../scripts/fix-translation-scope-and-cache.py
+          python3 -m py_compile ../scripts/apply-customizations.py ../scripts/fix-translation-scope-and-cache.py ../scripts/validate-translation-architecture.py
+          python3 ../scripts/validate-translation-architecture.py
           for f in \
             trakt_simplified_chinese/src/module-manifest.mjs \
             trakt_simplified_chinese/src/argument.mjs \
             trakt_simplified_chinese/src/shared/trakt-translation-helper.mjs \
-            trakt_simplified_chinese/src/features/media-translation.mjs \
+            trakt_simplified_chinese/src/shared/translation-scope-policy.mjs \
             trakt_simplified_chinese/src/features/people-translation.mjs \
             trakt_simplified_chinese/src/features/history-episodes-merged-by-show.mjs \
             trakt_simplified_chinese/src/features/player-injection-sofatime.mjs \
             trakt_simplified_chinese/src/features/player-injection-trakt.mjs; do
             node --check "$f"
           done
+          ! grep -R -n -E 'function[[:space:]]+(isChineseProductionRef|shouldTranslateMediaRef)[[:space:]]*\(' trakt_simplified_chinese/src/shared/trakt-translation-helper.mjs
+          test "$(grep -c 'import { shouldTranslateMedia } from "./translation-scope-policy.mjs";' trakt_simplified_chinese/src/shared/trakt-translation-helper.mjs)" -eq 1
 
       - name: Install dependencies
         working-directory: upstream
@@ -99,16 +103,12 @@ jobs:
           grep -q 'key: "historyRequestEnhancementEnabled"' "$src/module-manifest.mjs"
           grep -q 'key: "playerInjectionEnabled"' "$src/module-manifest.mjs"
           grep -q 'key: "eplayerxButtonOrder"' "$src/module-manifest.mjs"
-          grep -q '^function isChineseProductionRef' "$src/shared/trakt-translation-helper.mjs"
-          grep -q '^function shouldTranslateMediaRef' "$src/shared/trakt-translation-helper.mjs"
-          test "$(grep -c '^function isChineseProductionRef' "$src/shared/trakt-translation-helper.mjs")" -eq 1
-          test "$(grep -c '^function shouldTranslateMediaRef' "$src/shared/trakt-translation-helper.mjs")" -eq 1
           grep -q 'historyRequestEnhancementEnabled' "$src/features/history-episodes-merged-by-show.mjs"
           grep -q 'playerInjectionEnabled' "$src/features/player-injection-sofatime.mjs"
           grep -q 'playerInjectionEnabled' "$src/features/player-injection-trakt.mjs"
-          grep -q 'shouldTranslateMediaRef(ref)' "$src/shared/trakt-translation-helper.mjs"
-          grep -q 'shouldTranslatePeopleTarget' "$src/features/people-translation.mjs"
-          grep -q 'isChineseProductionRef' "$src/features/people-translation.mjs"
+          grep -q 'translationRefsByType' "$src/shared/trakt-translation-helper.mjs"
+          grep -q 'shouldTranslateMedia(ref)' "$src/shared/trakt-translation-helper.mjs"
+          grep -q 'shouldTranslateMedia' "$src/shared/translation-scope-policy.mjs"
 
       - name: Publish plugin and mirror runtime assets
         shell: bash
@@ -125,13 +125,11 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           p = Path("trakt_simplified_chinese/trakt_simplified_chinese.plugin")
-          s = p.read_text(encoding="utf-8")
-          lines = s.splitlines()
-          try:
-              eplayer_i = next(i for i, line in enumerate(lines) if line.startswith("eplayerxButtonOrder = "))
-              master_i = next(i for i, line in enumerate(lines) if line.startswith("playerInjectionEnabled = "))
-          except StopIteration as exc:
-              raise SystemExit(f"Required player option not found: {exc}")
+          lines = p.read_text(encoding="utf-8").splitlines()
+          master_i = next((i for i, line in enumerate(lines) if line.startswith("playerInjectionEnabled = ")), None)
+          eplayer_i = next((i for i, line in enumerate(lines) if line.startswith("eplayerxButtonOrder = ")), None)
+          if master_i is None or eplayer_i is None:
+              raise SystemExit("Required player options are missing from generated plugin")
           if master_i > eplayer_i:
               master_line = lines.pop(master_i)
               eplayer_i = next(i for i, line in enumerate(lines) if line.startswith("eplayerxButtonOrder = "))
