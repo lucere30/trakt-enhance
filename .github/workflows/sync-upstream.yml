@@ -1,0 +1,93 @@
+name: Sync upstream Trakt plugin
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */6 * * *"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/sync-upstream.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repository
+        uses: actions/checkout@v4
+
+      - name: Clone upstream
+        run: |
+          git clone --filter=blob:none --no-checkout https://github.com/DemoJameson/Proxy.Modules.git upstream
+          cd upstream
+          git sparse-checkout set --no-cone /trakt_simplified_chinese /scripts /shared /package.json /package-lock.json
+          git checkout main
+
+      - name: Restore EplayerX support from upstream history
+        working-directory: upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          path="trakt_simplified_chinese/src/shared/player-definitions.mjs"
+          commit="$(git log -S'EPLAYERX' --format='%H' -- "$path" | head -n 1 || true)"
+          if [ -z "$commit" ]; then
+            echo "Could not find an EPLAYERX history commit"
+            exit 1
+          fi
+          echo "EplayerX history commit: $commit"
+          if git cat-file -e "$commit^:$path" 2>/dev/null && git show "$commit^:$path" | grep -q 'EPLAYERX'; then
+            restore_commit="$commit"
+          elif git show "$commit:$path" | grep -q 'EPLAYERX'; then
+            restore_commit=""
+          else
+            echo "Could not identify a revision containing EPLAYERX"
+            exit 1
+          fi
+          if [ -n "$restore_commit" ]; then
+            git revert --no-edit "$restore_commit"
+          fi
+          if ! grep -R -q 'EPLAYERX' trakt_simplified_chinese/src; then
+            echo "EPLAYERX was not restored"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        working-directory: upstream
+        run: npm install
+
+      - name: Build upstream plugin with EplayerX restored
+        working-directory: upstream
+        run: npm run build:trakt
+
+      - name: Rewrite generated plugin to this repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p trakt_simplified_chinese
+          cp upstream/trakt_simplified_chinese/trakt_simplified_chinese.js trakt_simplified_chinese/trakt_simplified_chinese.js
+          sed \
+            -e 's#https://raw.githubusercontent.com/DemoJameson/Proxy.Modules/main/trakt_simplified_chinese/trakt_simplified_chinese.js#https://raw.githubusercontent.com/lucere30/trakt-enhance/main/trakt_simplified_chinese/trakt_simplified_chinese.js#g' \
+            upstream/trakt_simplified_chinese/trakt_simplified_chinese.plugin \
+            > trakt_simplified_chinese/trakt_simplified_chinese.plugin
+          grep -q 'EplayerX' trakt_simplified_chinese/trakt_simplified_chinese.plugin
+          grep -q 'lucere30/trakt-enhance/main/trakt_simplified_chinese/trakt_simplified_chinese.js' trakt_simplified_chinese/trakt_simplified_chinese.plugin
+
+      - name: Remove test / generated upstream checkout
+        run: rm -rf upstream
+
+      - name: Commit changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add trakt_simplified_chinese/trakt_simplified_chinese.plugin trakt_simplified_chinese/trakt_simplified_chinese.js
+          if git diff --cached --quiet; then
+            echo "No upstream changes."
+            exit 0
+          fi
+          git commit -m "Sync upstream Trakt plugin and restore EplayerX"
+          git push
