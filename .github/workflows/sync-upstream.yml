@@ -1,3 +1,4 @@
+# Sync pipeline v2: upstream-first, patch-second, validate-before-publish.
 name: Sync upstream Trakt plugin
 
 on:
