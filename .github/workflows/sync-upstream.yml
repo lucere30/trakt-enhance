@@ -92,6 +92,22 @@ jobs:
             -e 's#https://raw.githubusercontent.com/DemoJameson/Proxy.Modules/main/trakt_simplified_chinese/images/trakt.webp#https://raw.githubusercontent.com/lucere30/trakt-enhance/main/trakt_simplified_chinese/images/trakt.webp#g' \
             -e 's#https://github.com/DemoJameson/Proxy.Modules#https://github.com/lucere30/trakt-enhance#g' \
             upstream/trakt_simplified_chinese/trakt_simplified_chinese.plugin > trakt_simplified_chinese/trakt_simplified_chinese.plugin
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("trakt_simplified_chinese/trakt_simplified_chinese.plugin")
+          s = p.read_text(encoding="utf-8")
+          lines = s.splitlines()
+          try:
+              eplayer_i = next(i for i, line in enumerate(lines) if line.startswith("eplayerxButtonOrder = "))
+              master_i = next(i for i, line in enumerate(lines) if line.startswith("playerInjectionEnabled = "))
+          except StopIteration as exc:
+              raise SystemExit(f"Required player option not found: {exc}")
+          if master_i > eplayer_i:
+              master_line = lines.pop(master_i)
+              eplayer_i = next(i for i, line in enumerate(lines) if line.startswith("eplayerxButtonOrder = "))
+              lines.insert(eplayer_i, master_line)
+          p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          PY
           test -s trakt_simplified_chinese/trakt_simplified_chinese.plugin
           test -s trakt_simplified_chinese/trakt_simplified_chinese.js
           test -s trakt_simplified_chinese/images/trakt.webp
