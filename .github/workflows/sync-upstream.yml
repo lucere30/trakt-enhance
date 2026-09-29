@@ -50,17 +50,35 @@ jobs:
               s = s.replace('const PLAYER_BUTTON_ARGUMENT_GROUP_KEYS = {\n', 'const PLAYER_BUTTON_ARGUMENT_GROUP_KEYS = {\n    eplayerxButtonOrder: "eplayerx",\n', 1)
           if 'eplayerx: 1,' not in s:
               s = s.replace('function createDefaultPlayerButtonOrderConfig() {\n    return {\n', 'function createDefaultPlayerButtonOrderConfig() {\n    return {\n        eplayerx: 1,\n', 1)
-          Path("trakt_simplified_chinese/src/argument.mjs").write_text(s)
+          p.write_text(s)
           PY
           grep -R -q 'EPLAYERX' "$source_path"
           grep -R -q 'eplayerxButtonOrder' "$source_path"
           grep -q 'eplayerx: 1' "$source_path/argument.mjs"
 
-      - name: Apply custom feature controls and translation scope
+      - name: Apply custom feature controls
         run: python3 scripts/apply-customizations.py
 
-      - name: Apply translation scope and cache safety fixes
+      - name: Apply translation scope and cache safety
         run: python3 scripts/fix-translation-scope-and-cache.py
+
+      - name: Static validation before build
+        working-directory: upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile ../scripts/apply-customizations.py ../scripts/fix-translation-scope-and-cache.py
+          for f in \
+            trakt_simplified_chinese/src/module-manifest.mjs \
+            trakt_simplified_chinese/src/argument.mjs \
+            trakt_simplified_chinese/src/shared/trakt-translation-helper.mjs \
+            trakt_simplified_chinese/src/features/media-translation.mjs \
+            trakt_simplified_chinese/src/features/people-translation.mjs \
+            trakt_simplified_chinese/src/features/history-episodes-merged-by-show.mjs \
+            trakt_simplified_chinese/src/features/player-injection-sofatime.mjs \
+            trakt_simplified_chinese/src/features/player-injection-trakt.mjs; do
+            node --check "$f"
+          done
 
       - name: Install dependencies
         working-directory: upstream
@@ -80,11 +98,13 @@ jobs:
           grep -q 'key: "historyRequestEnhancementEnabled"' "$src/module-manifest.mjs"
           grep -q 'key: "playerInjectionEnabled"' "$src/module-manifest.mjs"
           grep -q 'function isChineseProductionRef' "$src/shared/trakt-translation-helper.mjs"
+          grep -q 'function shouldTranslateMediaRef' "$src/shared/trakt-translation-helper.mjs"
           grep -q 'historyRequestEnhancementEnabled' "$src/features/history-episodes-merged-by-show.mjs"
           grep -q 'playerInjectionEnabled' "$src/features/player-injection-sofatime.mjs"
           grep -q 'playerInjectionEnabled' "$src/features/player-injection-trakt.mjs"
           grep -q 'shouldTranslateMediaRef(ref)' "$src/shared/trakt-translation-helper.mjs"
           grep -q 'shouldTranslatePeopleTarget' "$src/features/people-translation.mjs"
+          grep -q 'isChineseProductionRef' "$src/features/people-translation.mjs"
 
       - name: Publish plugin and mirror runtime assets
         shell: bash
@@ -125,6 +145,7 @@ jobs:
           grep -q 'lucere30/trakt-enhance/main/trakt_simplified_chinese/images/trakt.webp' trakt_simplified_chinese/trakt_simplified_chinese.plugin
           grep -q 'github.com/lucere30/trakt-enhance' trakt_simplified_chinese/trakt_simplified_chinese.plugin
           ! grep -q 'DemoJameson/Proxy.Modules' trakt_simplified_chinese/trakt_simplified_chinese.plugin
+          ! grep -q 'DemoJameson/Proxy.Modules' trakt_simplified_chinese/trakt_simplified_chinese.js
 
       - name: Remove generated upstream checkout
         run: rm -rf upstream
