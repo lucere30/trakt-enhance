@@ -1,4 +1,4 @@
-# Sync pipeline v2: upstream-first, patch-second, validate-before-publish.
+# Sync pipeline v3: upstream-first, patch-second, validate-before-publish.
 name: Sync upstream Trakt plugin
 
 on:
@@ -61,11 +61,11 @@ jobs:
       - name: Apply custom feature controls
         run: python3 scripts/apply-customizations.py
 
-      - name: Normalize translation patch layer
-        run: python3 scripts/cleanup-translation-patch.py
-
       - name: Apply translation scope and cache safety
         run: python3 scripts/fix-translation-scope-and-cache.py
+
+      - name: Normalize translation patch layer
+        run: python3 scripts/cleanup-translation-patch.py
 
       - name: Static validation before build
         working-directory: upstream
