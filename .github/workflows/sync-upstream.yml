@@ -3,7 +3,7 @@ name: Sync upstream Trakt plugin
 on:
   workflow_dispatch:
   schedule:
-    - cron: "17 */6 * * *"
+    - cron: "17 */12 * * *"
   push:
     paths:
       - .github/workflows/sync-upstream.yml
