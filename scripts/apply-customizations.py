@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 ROOT = Path('upstream/trakt_simplified_chinese/src')
 
@@ -16,6 +17,15 @@ def patch(path, replacements):
     p.write_text(s, encoding='utf-8')
 
 
+def patch_regex(path, pattern, replacement):
+    p = ROOT / path
+    s = p.read_text(encoding='utf-8')
+    s2, count = re.subn(pattern, replacement, s, count=1, flags=re.MULTILINE)
+    if count != 1:
+        raise SystemExit(f'Regex patch anchor not found in {path}: {pattern!r}')
+    p.write_text(s2, encoding='utf-8')
+
+
 # 1) Public arguments: preserve upstream defaults, add only independent controls.
 patch('module-manifest.mjs', [
     ('        key: "historyEpisodesMergedByShow",\n        defaultValue: true,\n        type: "boolean",\n        tag: "历史剧集按电视剧合并",\n        desc: "启用后会将历史页面电视剧类别的观看记录按电视剧合并",\n    },\n    {\n        key: "translationEngine",',
@@ -29,7 +39,7 @@ patch('module-manifest.mjs', [
 # 2) Normalize new enum so string/BoxJs/runtime arguments are consistent.
 patch('argument.mjs', [
     ('function normalizeDebugMode(value) {',
-     'function normalizeTranslationScope(value) {\n    const normalized = String(value ?? "").trim().toLowerCase();\n    const labelMap = {\n        全部作品: "all",\n        仅中文\/华语作品: "chinese_only",\n        关闭媒体翻译: "off",\n    };\n    if (labelMap[normalized]) {\n        return labelMap[normalized];\n    }\n    return ["all", "chinese_only", "off"].includes(normalized) ? normalized : "all";\n}\n\nfunction normalizeDebugMode(value) {'),
+     'function normalizeTranslationScope(value) {\n    const normalized = String(value ?? "").trim().toLowerCase();\n    const labelMap = {\n        全部作品: "all",\n        "仅中文/华语作品": "chinese_only",\n        关闭媒体翻译: "off",\n    };\n    if (labelMap[normalized]) {\n        return labelMap[normalized];\n    }\n    return ["all", "chinese_only", "off"].includes(normalized) ? normalized : "all";\n}\n\nfunction normalizeDebugMode(value) {'),
     ('        posterImageMode: normalizePosterImageMode(argument.posterImageMode),\n        translationEngine: normalizeTranslationEngine(argument.translationEngine),',
      '        posterImageMode: normalizePosterImageMode(argument.posterImageMode),\n        translationEngine: normalizeTranslationEngine(argument.translationEngine),\n        translationScope: normalizeTranslationScope(argument.translationScope),')
 ])
@@ -75,11 +85,15 @@ patch('shared/trakt-translation-helper.mjs', [
      '    let cacheChanged = await hydrateFromBackend(cache, translationRefsByType, MEDIA_CONFIG, backendState);\n\n    const bulkResult = await fetchBulkTranslationsForMissing(cache, translationRefsByType, backendState);'),
     ('        const missingRefs = getMissingRefs(cache, mediaType, refsByType[mediaType]).slice(0, remainingDirectTranslationBudget);',
      '        const missingRefs = getMissingRefs(cache, mediaType, translationRefsByType[mediaType]).slice(0, remainingDirectTranslationBudget);'),
-    ('            applyTranslation(context.userAgent, target, entry, ref.mediaType);\n            applyOverrideToTarget(target, getOverrideFromTable(overridesTable, ref));',
-     '            if (!shouldTranslateMediaRef(ref)) {\n                return;\n            }\n            applyTranslation(context.userAgent, target, entry, ref.mediaType);\n            applyOverrideToTarget(target, getOverrideFromTable(overridesTable, ref));'),
     ('    TRAKT_DIRECT_TRANSLATION_MAX_REFS,\n    translateMediaItemsInPlace,',
      '    TRAKT_DIRECT_TRANSLATION_MAX_REFS,\n    isChineseProductionRef,\n    shouldTranslateMediaRef,\n    translateMediaItemsInPlace,')
 ])
+
+patch_regex(
+    'shared/trakt-translation-helper.mjs',
+    r'(?m)^(\s*)applyTranslation\(context\.userAgent, target, entry, ref\.mediaType\);\n(\s*)applyOverrideToTarget\(target, getOverrideFromTable\(overridesTable, ref\)\);',
+    r'\1if (!shouldTranslateMediaRef(ref)) {\n\1    return;\n\1}\n\1applyTranslation(context.userAgent, target, entry, ref.mediaType);\n\2applyOverrideToTarget(target, getOverrideFromTable(overridesTable, ref));',
+)
 
 # 6) Detail translation must obey the same scope, while image replacement remains independent.
 patch('features/media-translation.mjs', [
