@@ -4,8 +4,6 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "17 */6 * * *"
-  push:
-    branches: [main]
 
 permissions:
   contents: write
@@ -29,53 +27,29 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           removal="0886a1d912cfa78a395e5a37278903be9537c1f6"
           parent="$(git rev-parse "${removal}^")"
           head="$(git rev-parse origin/main)"
           source_path="trakt_simplified_chinese/src"
-
-          echo "Upstream HEAD: $head"
-          echo "EplayerX removal commit: $removal"
-          echo "EplayerX parent: $parent"
-
-          # Keep the current upstream build system, dependencies and generated files.
-          # Reconstruct only the source tree from the commit immediately before EplayerX
-          # was removed, then apply every source change made after that removal commit.
           cp "$source_path/argument.mjs" /tmp/current-argument.mjs
           git checkout "$parent" -- "$source_path"
           git diff --binary "$removal" "$head" -- "$source_path" ':!trakt_simplified_chinese/src/argument.mjs' > /tmp/upstream-source-after-removal.patch
-
           if [ -s /tmp/upstream-source-after-removal.patch ]; then
             git apply --3way /tmp/upstream-source-after-removal.patch
           fi
-
-          # argument.mjs has evolved independently after EplayerX was removed. Preserve
-          # that current upstream file and restore only the two EplayerX declarations.
           python3 - <<'PY'
           from pathlib import Path
           p = Path("/tmp/current-argument.mjs")
           s = p.read_text()
           if 'eplayerxButtonOrder: "eplayerx"' not in s:
-              s = s.replace(
-                  'const PLAYER_BUTTON_ARGUMENT_GROUP_KEYS = {\n',
-                  'const PLAYER_BUTTON_ARGUMENT_GROUP_KEYS = {\n    eplayerxButtonOrder: "eplayerx",\n',
-                  1,
-              )
+              s = s.replace('const PLAYER_BUTTON_ARGUMENT_GROUP_KEYS = {\n', 'const PLAYER_BUTTON_ARGUMENT_GROUP_KEYS = {\n    eplayerxButtonOrder: "eplayerx",\n', 1)
           if 'eplayerx: 1,' not in s:
-              s = s.replace(
-                  'function createDefaultPlayerButtonOrderConfig() {\n    return {\n',
-                  'function createDefaultPlayerButtonOrderConfig() {\n    return {\n        eplayerx: 1,\n',
-                  1,
-              )
-          p.write_text(s)
+              s = s.replace('function createDefaultPlayerButtonOrderConfig() {\n    return {\n', 'function createDefaultPlayerButtonOrderConfig() {\n    return {\n        eplayerx: 1,\n', 1)
           Path("trakt_simplified_chinese/src/argument.mjs").write_text(s)
           PY
-
           grep -R -q 'EPLAYERX' "$source_path"
           grep -R -q 'eplayerxButtonOrder' "$source_path"
           grep -q 'eplayerx: 1' "$source_path/argument.mjs"
-          echo "EplayerX restored; current upstream source changes preserved."
 
       - name: Install dependencies
         working-directory: upstream
@@ -85,26 +59,26 @@ jobs:
         working-directory: upstream
         run: npm run build:trakt
 
-      - name: Validate generated plugin
-        working-directory: upstream
+      - name: Publish plugin and mirror runtime assets
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p trakt_simplified_chinese/images
+          cp upstream/trakt_simplified_chinese/trakt_simplified_chinese.js trakt_simplified_chinese/trakt_simplified_chinese.js
+          cp upstream/trakt_simplified_chinese/images/trakt.webp trakt_simplified_chinese/images/trakt.webp
+          sed \
+            -e 's#https://raw.githubusercontent.com/DemoJameson/Proxy.Modules/main/trakt_simplified_chinese/trakt_simplified_chinese.js#https://raw.githubusercontent.com/lucere30/trakt-enhance/main/trakt_simplified_chinese/trakt_simplified_chinese.js#g' \
+            -e 's#https://raw.githubusercontent.com/DemoJameson/Proxy.Modules/main/trakt_simplified_chinese/images/trakt.webp#https://raw.githubusercontent.com/lucere30/trakt-enhance/main/trakt_simplified_chinese/images/trakt.webp#g' \
+            -e 's#https://github.com/DemoJameson/Proxy.Modules#https://github.com/lucere30/trakt-enhance#g' \
+            upstream/trakt_simplified_chinese/trakt_simplified_chinese.plugin > trakt_simplified_chinese/trakt_simplified_chinese.plugin
           test -s trakt_simplified_chinese/trakt_simplified_chinese.plugin
           test -s trakt_simplified_chinese/trakt_simplified_chinese.js
-          grep -q 'EplayerX' trakt_simplified_chinese/trakt_simplified_chinese.plugin
-          grep -q 'eplayerx' trakt_simplified_chinese/trakt_simplified_chinese.js
-          echo "Generated plugin contains EplayerX support."
-
-      - name: Publish generated plugin
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p trakt_simplified_chinese
-          cp upstream/trakt_simplified_chinese/trakt_simplified_chinese.js trakt_simplified_chinese/trakt_simplified_chinese.js
-          sed -e 's#https://raw.githubusercontent.com/DemoJameson/Proxy.Modules/main/trakt_simplified_chinese/trakt_simplified_chinese.js#https://raw.githubusercontent.com/lucere30/trakt-enhance/main/trakt_simplified_chinese/trakt_simplified_chinese.js#g' upstream/trakt_simplified_chinese/trakt_simplified_chinese.plugin > trakt_simplified_chinese/trakt_simplified_chinese.plugin
+          test -s trakt_simplified_chinese/images/trakt.webp
           grep -q 'EplayerX' trakt_simplified_chinese/trakt_simplified_chinese.plugin
           grep -q 'lucere30/trakt-enhance/main/trakt_simplified_chinese/trakt_simplified_chinese.js' trakt_simplified_chinese/trakt_simplified_chinese.plugin
+          grep -q 'lucere30/trakt-enhance/main/trakt_simplified_chinese/images/trakt.webp' trakt_simplified_chinese/trakt_simplified_chinese.plugin
+          grep -q 'github.com/lucere30/trakt-enhance' trakt_simplified_chinese/trakt_simplified_chinese.plugin
+          ! grep -q 'DemoJameson/Proxy.Modules' trakt_simplified_chinese/trakt_simplified_chinese.plugin
 
       - name: Remove generated upstream checkout
         run: rm -rf upstream
@@ -115,10 +89,11 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add trakt_simplified_chinese/trakt_simplified_chinese.plugin trakt_simplified_chinese/trakt_simplified_chinese.js
+          git add -A trakt_simplified_chinese
+          git rm -f --ignore-unmatch trakt_simplified_chinese/images/README.md
           if git diff --cached --quiet; then
             echo "No upstream changes."
             exit 0
           fi
-          git commit -m "Sync upstream Trakt plugin and restore EplayerX"
+          git commit -m "Sync upstream plugin and restore EplayerX"
           git push
