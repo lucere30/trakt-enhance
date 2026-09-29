@@ -6,8 +6,6 @@ on:
     - cron: "17 */6 * * *"
   push:
     branches: [main]
-    paths:
-      - ".github/workflows/sync-upstream.yml"
 
 permissions:
   contents: write
@@ -39,20 +37,14 @@ jobs:
           fi
           echo "EplayerX history commit: $commit"
           if git cat-file -e "$commit^:$path" 2>/dev/null && git show "$commit^:$path" | grep -q 'EPLAYERX'; then
-            restore_commit="$commit"
+            git revert --no-edit "$commit"
           elif git show "$commit:$path" | grep -q 'EPLAYERX'; then
-            restore_commit=""
+            echo "Current HEAD already contains EPLAYERX"
           else
             echo "Could not identify a revision containing EPLAYERX"
             exit 1
           fi
-          if [ -n "$restore_commit" ]; then
-            git revert --no-edit "$restore_commit"
-          fi
-          if ! grep -R -q 'EPLAYERX' trakt_simplified_chinese/src; then
-            echo "EPLAYERX was not restored"
-            exit 1
-          fi
+          grep -R -q 'EPLAYERX' trakt_simplified_chinese/src
 
       - name: Install dependencies
         working-directory: upstream
@@ -75,7 +67,7 @@ jobs:
           grep -q 'EplayerX' trakt_simplified_chinese/trakt_simplified_chinese.plugin
           grep -q 'lucere30/trakt-enhance/main/trakt_simplified_chinese/trakt_simplified_chinese.js' trakt_simplified_chinese/trakt_simplified_chinese.plugin
 
-      - name: Remove test / generated upstream checkout
+      - name: Remove generated upstream checkout
         run: rm -rf upstream
 
       - name: Commit changes
