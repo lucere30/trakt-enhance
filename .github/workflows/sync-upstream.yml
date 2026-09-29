@@ -8,6 +8,7 @@ on:
     paths:
       - .github/workflows/sync-upstream.yml
       - scripts/apply-customizations.py
+      - scripts/cleanup-translation-patch.py
       - scripts/fix-translation-scope-and-cache.py
 
 permissions:
@@ -59,6 +60,9 @@ jobs:
       - name: Apply custom feature controls
         run: python3 scripts/apply-customizations.py
 
+      - name: Normalize translation patch layer
+        run: python3 scripts/cleanup-translation-patch.py
+
       - name: Apply translation scope and cache safety
         run: python3 scripts/fix-translation-scope-and-cache.py
 
@@ -67,7 +71,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile ../scripts/apply-customizations.py ../scripts/fix-translation-scope-and-cache.py
+          python3 -m py_compile ../scripts/apply-customizations.py ../scripts/cleanup-translation-patch.py ../scripts/fix-translation-scope-and-cache.py
           for f in \
             trakt_simplified_chinese/src/module-manifest.mjs \
             trakt_simplified_chinese/src/argument.mjs \
@@ -97,8 +101,11 @@ jobs:
           grep -q 'key: "translationScope"' "$src/module-manifest.mjs"
           grep -q 'key: "historyRequestEnhancementEnabled"' "$src/module-manifest.mjs"
           grep -q 'key: "playerInjectionEnabled"' "$src/module-manifest.mjs"
+          grep -q 'key: "eplayerxButtonOrder"' "$src/module-manifest.mjs"
           grep -q 'function isChineseProductionRef' "$src/shared/trakt-translation-helper.mjs"
           grep -q 'function shouldTranslateMediaRef' "$src/shared/trakt-translation-helper.mjs"
+          test "$(grep -c 'function isChineseProductionRef' "$src/shared/trakt-translation-helper.mjs")" -eq 1
+          test "$(grep -c 'function shouldTranslateMediaRef' "$src/shared/trakt-translation-helper.mjs")" -eq 1
           grep -q 'historyRequestEnhancementEnabled' "$src/features/history-episodes-merged-by-show.mjs"
           grep -q 'playerInjectionEnabled' "$src/features/player-injection-sofatime.mjs"
           grep -q 'playerInjectionEnabled' "$src/features/player-injection-trakt.mjs"
