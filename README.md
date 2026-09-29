@@ -16,7 +16,3 @@ Loon 插件：
 ```text
 https://raw.githubusercontent.com/lucere30/trakt-enhance/main/trakt_simplified_chinese/trakt_simplified_chinese.plugin
 ```
-
-## 更新
-
-GitHub Actions 每 12 小时检查一次上游，也支持手动运行。同步时以最新上游版本为基础重新应用本仓库的定制修改；如果构建或检查失败，则不会发布新版本。
