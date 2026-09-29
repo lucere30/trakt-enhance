@@ -13,8 +13,8 @@ historyRequestEnhancementEnabled = switch, "true", tag=历史请求增强, desc=
 translationEngine = select,"谷歌翻译","DeepLX","关闭",tag=翻译部分文本,desc=选择翻译引擎：谷歌翻译（快，需翻墙）、DeepLX（慢，可直连）、关闭
 translationScope = select,"全部作品","仅中文/华语作品","关闭媒体翻译",tag=媒体翻译范围,desc=全部作品按当前逻辑翻译；仅中文/华语作品根据 Trakt 的 language/country 判断；关闭媒体标题与简介翻译
 characterTranslationEnabled = switch, "true", tag=用豆瓣翻译角色名, desc=启用后会用豆瓣翻译角色名
-eplayerxButtonOrder = select,"1","2","3","4","0",tag=EplayerX 跳转按钮,desc=序号代表在 Trakt 中的排序位置，0 不显示，默认 1
 playerInjectionEnabled = switch, "true", tag=播放器注入, desc=总开关：控制 Trakt/SofaTime 的播放器来源、Watch Now 和播放器 Logo 注入；关闭后保留各播放器单独配置
+eplayerxButtonOrder = select,"1","2","3","4","0",tag=EplayerX 跳转按钮,desc=序号代表在 Trakt 中的排序位置，0 不显示，默认 1
 forwardButtonOrder = select,"1","2","3","0",tag=Forward 跳转按钮,desc=序号代表在 Trakt 中的排序位置，0 不显示，默认 1
 infuseButtonOrder = select,"1","2","3","0",tag=Infuse 跳转按钮,desc=序号代表在 Trakt 中的排序位置，0 不显示，默认 2
 rexButtonOrder = select,"1","2","3","0",tag=Rex 跳转按钮,desc=序号代表在 Trakt 中的排序位置，0 不显示，默认 3
