@@ -1,0 +1,1 @@
+This directory is reserved for runtime assets mirrored from the upstream Trakt Simplified Chinese plugin.
