@@ -19,8 +19,8 @@ def require_replace(text, old, new, label):
 
 
 def remove_function_declarations(source, name):
-    """Remove every top-level declaration of name, including export function."""
-    pattern = re.compile(rf"(?m)^(?:export\s+)?function\s+{re.escape(name)}\s*\(")
+    """Remove every declaration of name, including indented/export variants."""
+    pattern = re.compile(rf"(?m)^[ \t]*(?:export\s+)?function\s+{re.escape(name)}\s*\(")
     while True:
         match = pattern.search(source)
         if not match:
@@ -71,12 +71,9 @@ def insert_before(text, pattern, block, label):
 
 # This is the only script that owns translation-scope/cache customization.
 # It is deliberately self-contained and idempotent: every run first removes
-# our helper declarations (including export variants), then installs exactly
-# one canonical implementation. No second cleanup patch is required.
+# our helper declarations (including indented/export variants), then installs
+# exactly one canonical implementation.
 
-# Normalize the argumentFields array after the legacy EplayerX restoration and
-# custom controls. Rebuilding this small declarative section avoids fragile
-# brace-level patching and gives every future upstream build the same schema.
 manifest = read("module-manifest.mjs")
 start = manifest.find("const argumentFields = [")
 end = manifest.find("\nconst ALL_ARGUMENT_KEYS", start)
@@ -103,9 +100,6 @@ manifest = manifest[:start] + argument_fields + manifest[end:]
 write("module-manifest.mjs", manifest)
 
 helper = read("shared/trakt-translation-helper.mjs")
-# Remove any previous/custom declaration variants before installing the one
-# canonical implementation. This specifically handles upstream `export`
-# declarations, which the old deduper failed to recognize.
 for helper_name in ("isChineseProductionRef", "shouldTranslateMediaRef"):
     helper = remove_function_declarations(helper, helper_name)
 
@@ -150,9 +144,9 @@ helper = helper.replace("getMissingRefs(cache, mediaType, refsByType[mediaType])
 if "isChineseProductionRef,\n" not in helper:
     helper = require_replace(helper, "    isPosterImageReplacementUserAgent,\n", "    isChineseProductionRef,\n    isPosterImageReplacementUserAgent,\n", "helper export")
 
-if len(re.findall(r"(?m)^function\s+isChineseProductionRef\s*\(", helper)) != 1:
+if len(re.findall(r"(?m)^[ \t]*function\s+isChineseProductionRef\s*\(", helper)) != 1:
     raise SystemExit("Expected exactly one isChineseProductionRef declaration")
-if len(re.findall(r"(?m)^function\s+shouldTranslateMediaRef\s*\(", helper)) != 1:
+if len(re.findall(r"(?m)^[ \t]*function\s+shouldTranslateMediaRef\s*\(", helper)) != 1:
     raise SystemExit("Expected exactly one shouldTranslateMediaRef declaration")
 write("shared/trakt-translation-helper.mjs", helper)
 
