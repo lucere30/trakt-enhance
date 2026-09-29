@@ -22,32 +22,36 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Clone upstream with full history
-        run: |
-          set -euo pipefail
-          git clone https://github.com/DemoJameson/Proxy.Modules.git upstream
+        run: git clone https://github.com/DemoJameson/Proxy.Modules.git upstream
 
-      - name: Rebuild upstream HEAD while excluding only the EplayerX removal commit
+      - name: Restore EplayerX into current upstream source
         working-directory: upstream
         shell: bash
         run: |
           set -euo pipefail
+
           removal="0886a1d912cfa78a395e5a37278903be9537c1f6"
           parent="$(git rev-parse "${removal}^")"
           head="$(git rev-parse origin/main)"
+          source_path="trakt_simplified_chinese/src"
+
           echo "Upstream HEAD: $head"
           echo "EplayerX removal commit: $removal"
-          echo "Rebuilding from parent: $parent"
-          git checkout --detach "$parent"
-          git checkout -b eplayerx-restored
-          mapfile -t commits < <(git rev-list --reverse --first-parent --no-merges "${removal}..${head}")
-          echo "Replaying ${#commits[@]} post-removal commits."
-          for commit in "${commits[@]}"; do
-            echo "Cherry-picking $commit"
-            git cherry-pick --no-edit "$commit"
-          done
-          grep -R -q 'EPLAYERX' trakt_simplified_chinese/src
-          grep -R -q 'eplayerxButtonOrder' trakt_simplified_chinese/src
-          echo "EplayerX restored while preserving replayable upstream changes."
+          echo "EplayerX parent: $parent"
+
+          # Keep every current upstream file (build system, package metadata, generated files, etc.).
+          # Only the source tree is reconstructed from the pre-removal version and then receives
+          # all source-only changes made after the EplayerX removal commit.
+          git checkout "$parent" -- "$source_path"
+          git diff --binary "$removal" "$head" -- "$source_path" > /tmp/upstream-source-after-removal.patch
+
+          if [ -s /tmp/upstream-source-after-removal.patch ]; then
+            git apply --3way /tmp/upstream-source-after-removal.patch
+          fi
+
+          grep -R -q 'EPLAYERX' "$source_path"
+          grep -R -q 'eplayerxButtonOrder' "$source_path"
+          echo "EplayerX restored; current upstream source changes preserved."
 
       - name: Install dependencies
         working-directory: upstream
