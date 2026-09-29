@@ -24,7 +24,7 @@ jobs:
           git sparse-checkout set --no-cone /trakt_simplified_chinese /scripts /shared /package.json /package-lock.json
           git checkout main
 
-      - name: Restore EplayerX support from upstream history
+      - name: Restore EplayerX source changes without reverting unrelated upstream work
         working-directory: upstream
         shell: bash
         run: |
@@ -32,19 +32,38 @@ jobs:
           path="trakt_simplified_chinese/src/shared/player-definitions.mjs"
           commit="$(git log -S'EPLAYERX' --format='%H' -- "$path" | head -n 1 || true)"
           if [ -z "$commit" ]; then
-            echo "Could not find an EPLAYERX history commit"
+            echo "Could not find the historical EPLAYERX commit"
             exit 1
           fi
-          echo "EplayerX history commit: $commit"
-          if git cat-file -e "$commit^:$path" 2>/dev/null && git show "$commit^:$path" | grep -q 'EPLAYERX'; then
-            git revert --no-edit "$commit"
-          elif git show "$commit:$path" | grep -q 'EPLAYERX'; then
-            echo "Current HEAD already contains EPLAYERX"
-          else
-            echo "Could not identify a revision containing EPLAYERX"
-            exit 1
-          fi
+          parent="${commit}^"
+          echo "Using EplayerX removal commit: $commit"
+
+          while IFS= read -r file; do
+            case "$file" in
+              trakt_simplified_chinese/src/*)
+                if ! git cat-file -e "$commit:$file" 2>/dev/null || ! git cat-file -e "$parent:$file" 2>/dev/null; then
+                  continue
+                fi
+                tmp_base="$(mktemp)"
+                tmp_other="$(mktemp)"
+                tmp_out="$(mktemp)"
+                git show "$commit:$file" > "$tmp_base"
+                git show "$parent:$file" > "$tmp_other"
+                if git merge-file -p "$file" "$tmp_base" "$tmp_other" > "$tmp_out"; then
+                  mv "$tmp_out" "$file"
+                else
+                  echo "Three-way merge failed for $file"
+                  rm -f "$tmp_base" "$tmp_other" "$tmp_out"
+                  exit 1
+                fi
+                rm -f "$tmp_base" "$tmp_other"
+                ;;
+            esac
+          done < <(git diff-tree --no-commit-id --name-only -r "$commit")
+
           grep -R -q 'EPLAYERX' trakt_simplified_chinese/src
+          grep -R -q 'eplayerxButtonOrder' trakt_simplified_chinese/src
+          echo "EplayerX source support restored."
 
       - name: Install dependencies
         working-directory: upstream
