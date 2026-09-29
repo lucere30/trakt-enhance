@@ -39,18 +39,42 @@ jobs:
           echo "EplayerX removal commit: $removal"
           echo "EplayerX parent: $parent"
 
-          # Keep every current upstream file (build system, package metadata, generated files, etc.).
-          # Only the source tree is reconstructed from the pre-removal version and then receives
-          # all source-only changes made after the EplayerX removal commit.
+          # Keep the current upstream build system, dependencies and generated files.
+          # Reconstruct only the source tree from the commit immediately before EplayerX
+          # was removed, then apply every source change made after that removal commit.
+          cp "$source_path/argument.mjs" /tmp/current-argument.mjs
           git checkout "$parent" -- "$source_path"
-          git diff --binary "$removal" "$head" -- "$source_path" > /tmp/upstream-source-after-removal.patch
+          git diff --binary "$removal" "$head" -- "$source_path" ':!trakt_simplified_chinese/src/argument.mjs' > /tmp/upstream-source-after-removal.patch
 
           if [ -s /tmp/upstream-source-after-removal.patch ]; then
             git apply --3way /tmp/upstream-source-after-removal.patch
           fi
 
+          # argument.mjs has evolved independently after EplayerX was removed. Preserve
+          # that current upstream file and restore only the two EplayerX declarations.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("/tmp/current-argument.mjs")
+          s = p.read_text()
+          if 'eplayerxButtonOrder: "eplayerx"' not in s:
+              s = s.replace(
+                  'const PLAYER_BUTTON_ARGUMENT_GROUP_KEYS = {\n',
+                  'const PLAYER_BUTTON_ARGUMENT_GROUP_KEYS = {\n    eplayerxButtonOrder: "eplayerx",\n',
+                  1,
+              )
+          if 'eplayerx: 1,' not in s:
+              s = s.replace(
+                  'function createDefaultPlayerButtonOrderConfig() {\n    return {\n',
+                  'function createDefaultPlayerButtonOrderConfig() {\n    return {\n        eplayerx: 1,\n',
+                  1,
+              )
+          p.write_text(s)
+          Path("trakt_simplified_chinese/src/argument.mjs").write_text(s)
+          PY
+
           grep -R -q 'EPLAYERX' "$source_path"
           grep -R -q 'eplayerxButtonOrder' "$source_path"
+          grep -q 'eplayerx: 1' "$source_path/argument.mjs"
           echo "EplayerX restored; current upstream source changes preserved."
 
       - name: Install dependencies
