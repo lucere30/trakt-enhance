@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "17 */6 * * *"
+  push:
+    branches: [main]
 
 permissions:
   contents: write
@@ -29,35 +31,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           removal="0886a1d912cfa78a395e5a37278903be9537c1f6"
           parent="$(git rev-parse "${removal}^")"
           head="$(git rev-parse origin/main)"
-
           echo "Upstream HEAD: $head"
           echo "EplayerX removal commit: $removal"
           echo "Rebuilding from parent: $parent"
-
           git checkout --detach "$parent"
           git checkout -b eplayerx-restored
-
           mapfile -t commits < <(git rev-list --reverse --first-parent --no-merges "${removal}..${head}")
           echo "Replaying ${#commits[@]} post-removal commits."
-
           for commit in "${commits[@]}"; do
             echo "Cherry-picking $commit"
             git cherry-pick --no-edit "$commit"
           done
-
-          if ! grep -R -q 'EPLAYERX' trakt_simplified_chinese/src; then
-            echo "EplayerX source support was not restored."
-            exit 1
-          fi
-          if ! grep -R -q 'eplayerxButtonOrder' trakt_simplified_chinese/src; then
-            echo "EplayerX configuration support was not restored."
-            exit 1
-          fi
-
+          grep -R -q 'EPLAYERX' trakt_simplified_chinese/src
+          grep -R -q 'eplayerxButtonOrder' trakt_simplified_chinese/src
           echo "EplayerX restored while preserving replayable upstream changes."
 
       - name: Install dependencies
@@ -85,11 +74,7 @@ jobs:
           set -euo pipefail
           mkdir -p trakt_simplified_chinese
           cp upstream/trakt_simplified_chinese/trakt_simplified_chinese.js trakt_simplified_chinese/trakt_simplified_chinese.js
-          sed \
-            -e 's#https://raw.githubusercontent.com/DemoJameson/Proxy.Modules/main/trakt_simplified_chinese/trakt_simplified_chinese.js#https://raw.githubusercontent.com/lucere30/trakt-enhance/main/trakt_simplified_chinese/trakt_simplified_chinese.js#g' \
-            upstream/trakt_simplified_chinese/trakt_simplified_chinese.plugin \
-            > trakt_simplified_chinese/trakt_simplified_chinese.plugin
-
+          sed -e 's#https://raw.githubusercontent.com/DemoJameson/Proxy.Modules/main/trakt_simplified_chinese/trakt_simplified_chinese.js#https://raw.githubusercontent.com/lucere30/trakt-enhance/main/trakt_simplified_chinese/trakt_simplified_chinese.js#g' upstream/trakt_simplified_chinese/trakt_simplified_chinese.plugin > trakt_simplified_chinese/trakt_simplified_chinese.plugin
           grep -q 'EplayerX' trakt_simplified_chinese/trakt_simplified_chinese.plugin
           grep -q 'lucere30/trakt-enhance/main/trakt_simplified_chinese/trakt_simplified_chinese.js' trakt_simplified_chinese/trakt_simplified_chinese.plugin
 
