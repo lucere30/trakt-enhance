@@ -12,68 +12,27 @@ def write(path, text):
     (ROOT / path).write_text(text, encoding="utf-8")
 
 
-def require_replace(text, old, new, label):
+def insert_once(text, marker_pattern, insertion, label):
+    if insertion.strip() in text:
+        return text
+    match = re.search(marker_pattern, text, flags=re.MULTILINE)
+    if not match:
+        raise SystemExit(f"Stable anchor not found for {label}: {marker_pattern}")
+    return text[:match.start()] + insertion + text[match.start():]
+
+
+def replace_once(text, old, new, label):
+    if new in text:
+        return text
     if old not in text:
-        raise SystemExit(f"Anchor not found: {label}")
+        raise SystemExit(f"Stable anchor not found for {label}")
     return text.replace(old, new, 1)
 
 
-def remove_function_declarations(source, name):
-    """Remove every declaration of name, including indented/export variants."""
-    pattern = re.compile(rf"(?m)^[ \t]*(?:export\s+)?function\s+{re.escape(name)}\s*\(")
-    while True:
-        match = pattern.search(source)
-        if not match:
-            return source
-        start = match.start()
-        brace_start = source.find("{", match.end())
-        if brace_start < 0:
-            raise SystemExit(f"Cannot locate body for {name}")
-        depth = 0
-        quote = None
-        escaped = False
-        end = None
-        for i in range(brace_start, len(source)):
-            ch = source[i]
-            if quote:
-                if escaped:
-                    escaped = False
-                elif ch == "\\":
-                    escaped = True
-                elif ch == quote:
-                    quote = None
-                continue
-            if ch in ("'", '"', "`"):
-                quote = ch
-            elif ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0:
-                    end = i + 1
-                    break
-        if end is None:
-            raise SystemExit(f"Unbalanced braces in {name}")
-        line_end = source.find("\n", end)
-        if line_end < 0:
-            line_end = len(source)
-        else:
-            line_end += 1
-        source = source[:start] + source[line_end:]
-
-
-def insert_before(text, pattern, block, label):
-    m = re.search(pattern, text, re.MULTILINE)
-    if not m:
-        raise SystemExit(f"Anchor not found: {label}")
-    return text[:m.start()] + block + text[m.start():]
-
-
-# This is the only script that owns translation-scope/cache customization.
-# It is deliberately self-contained and idempotent: every run first removes
-# our helper declarations (including indented/export variants), then installs
-# exactly one canonical implementation.
-
+# This is the single owner of translation-scope/cache customization.
+# It never modifies the upstream translation helper with generated helper
+# declarations. Instead, it adds one small policy module and wires the
+# existing translation entry points to that policy. Re-running is safe.
 manifest = read("module-manifest.mjs")
 start = manifest.find("const argumentFields = [")
 end = manifest.find("\nconst ALL_ARGUMENT_KEYS", start)
@@ -99,122 +58,114 @@ argument_fields = '''const argumentFields = [
 manifest = manifest[:start] + argument_fields + manifest[end:]
 write("module-manifest.mjs", manifest)
 
+# Remove the old source-level helper injection completely. If the old helper
+# declarations are still present in a previously generated checkout, remove
+# them once; no new declaration is ever inserted into this upstream file.
 helper = read("shared/trakt-translation-helper.mjs")
-for helper_name in ("isChineseProductionRef", "shouldTranslateMediaRef"):
-    helper = remove_function_declarations(helper, helper_name)
+for name in ("isChineseProductionRef", "shouldTranslateMediaRef"):
+    pattern = re.compile(rf"(?ms)^[ \t]*(?:export\s+)?function\s+{re.escape(name)}\s*\([^{{]*\{{")
+    while True:
+        m = pattern.search(helper)
+        if not m:
+            break
+        brace = helper.find("{", m.start())
+        depth = 0
+        quote = None
+        escaped = False
+        end = None
+        for i in range(brace, len(helper)):
+            ch = helper[i]
+            if quote:
+                if escaped:
+                    escaped = False
+                elif ch == "\\":
+                    escaped = True
+                elif ch == quote:
+                    quote = None
+                continue
+            if ch in ("'", '"', "`"):
+                quote = ch
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    end = i + 1
+                    break
+        if end is None:
+            raise SystemExit(f"Unbalanced braces while removing {name}")
+        nl = helper.find("\n", end)
+        nl = len(helper) if nl < 0 else nl + 1
+        helper = helper[:m.start()] + helper[nl:]
+write("shared/trakt-translation-helper.mjs", helper)
 
-helper_block = r'''function isChineseProductionRef(ref) {
+# Create an independent policy module. This file is ours, so upstream changes
+# to translation-helper.mjs cannot create duplicate declarations here.
+policy = '''const CN_COUNTRIES = new Set(["cn", "hk", "tw", "sg", "mo"]);
+
+export function isChineseProduction(ref) {
     const language = String(ref?.language ?? "").trim().toLowerCase();
-    const rawCountry = ref?.country;
-    const countries = Array.isArray(rawCountry) ? rawCountry : [rawCountry];
-    const countrySet = new Set(countries.flatMap((value) => String(value ?? "").split(/[,|\s]+/)).map((value) => value.trim().toLowerCase()).filter(Boolean));
-    return language === "zh" || ["cn", "hk", "tw", "sg", "mo"].some((country) => countrySet.has(country));
+    const raw = Array.isArray(ref?.country) ? ref.country : [ref?.country];
+    const countries = raw
+        .flatMap((value) => String(value ?? "").split(/[,|\\s]+/))
+        .map((value) => value.trim().toLowerCase())
+        .filter(Boolean);
+    return language === "zh" || countries.some((country) => CN_COUNTRIES.has(country));
 }
 
-function shouldTranslateMediaRef(ref) {
-    const argument = globalThis.$ctx?.argument ?? {};
+export function shouldTranslateMedia(ref, argument = globalThis.$ctx?.argument ?? {}) {
     const engine = String(argument.translationEngine ?? "google").trim().toLowerCase();
     const scope = String(argument.translationScope ?? "all").trim().toLowerCase();
     if (engine === "off" || scope === "off") return false;
-    return scope !== "chinese_only" || isChineseProductionRef(ref);
+    return scope !== "chinese_only" || isChineseProduction(ref);
 }
-
 '''
-helper = insert_before(helper, r"(?m)^function applyTranslation\(", helper_block, "canonical media scope helpers")
+policy_path = ROOT / "shared/translation-scope-policy.mjs"
+policy_path.write_text(policy, encoding="utf-8")
 
-if "language: item?.show?.language ?? null" not in helper:
-    helper = require_replace(helper, "        sourceTitle: episode?.title ?? null,\n        availableTranslations:", "        sourceTitle: episode?.title ?? null,\n        language: item?.show?.language ?? null,\n        country: item?.show?.country ?? null,\n        availableTranslations:", "episode language inheritance")
-if "if (ref && shouldTranslateMediaRef(ref))" not in helper:
-    helper = require_replace(helper, """            if (ref) {
-                applyTranslationFn(target, getCachedTranslation(cache, mediaType, ref), ref);
-            }""", """            if (ref && shouldTranslateMediaRef(ref)) {
-                applyTranslationFn(target, getCachedTranslation(cache, mediaType, ref), ref);
-            }""", "cached translation application guard")
-if "const translationRefsByType = createMediaCollection(MEDIA_CONFIG);" not in helper:
-    helper = require_replace(helper, "    const refsByType = collectMediaRefs(items, MEDIA_CONFIG);\n    const shouldReplaceMediaImages = shouldReplaceImages();", """    const refsByType = collectMediaRefs(items, MEDIA_CONFIG);
-    const translationRefsByType = createMediaCollection(MEDIA_CONFIG);
-    Object.keys(MEDIA_CONFIG).forEach((mediaType) => {
-        translationRefsByType[mediaType] = refsByType[mediaType].filter((ref) => shouldTranslateMediaRef(ref));
-    });
-    const shouldReplaceMediaImages = shouldReplaceImages();""", "translation ref filtering")
-helper = helper.replace("hydrateFromBackend(cache, refsByType, MEDIA_CONFIG, backendState)", "hydrateFromBackend(cache, translationRefsByType, MEDIA_CONFIG, backendState)")
-helper = helper.replace("fetchBulkTranslationsForMissing(cache, refsByType, backendState)", "fetchBulkTranslationsForMissing(cache, translationRefsByType, backendState)")
-helper = helper.replace("getMissingRefs(cache, mediaType, refsByType[mediaType])", "getMissingRefs(cache, mediaType, translationRefsByType[mediaType])")
-
-if "isChineseProductionRef,\n" not in helper:
-    helper = require_replace(helper, "    isPosterImageReplacementUserAgent,\n", "    isChineseProductionRef,\n    isPosterImageReplacementUserAgent,\n", "helper export")
-
-if len(re.findall(r"(?m)^[ \t]*function\s+isChineseProductionRef\s*\(", helper)) != 1:
-    raise SystemExit("Expected exactly one isChineseProductionRef declaration")
-if len(re.findall(r"(?m)^[ \t]*function\s+shouldTranslateMediaRef\s*\(", helper)) != 1:
-    raise SystemExit("Expected exactly one shouldTranslateMediaRef declaration")
+# Export/import the policy through the existing helper without defining policy
+# functions there. This is a stable one-line integration point.
+helper = read("shared/trakt-translation-helper.mjs")
+helper = replace_once(
+    helper,
+    'import { cacheUtils } from "./cache-utils.mjs";\n',
+    'import { cacheUtils } from "./cache-utils.mjs";\nimport { shouldTranslateMedia, isChineseProduction } from "./translation-scope-policy.mjs";\n',
+    "translation policy import",
+)
 write("shared/trakt-translation-helper.mjs", helper)
 
+# Wire policy checks at the existing cache hydration/application boundaries.
+media_helper = read("shared/trakt-translation-helper.mjs")
+if "const translationRefsByType =" not in media_helper:
+    media_helper = replace_once(
+        media_helper,
+        "    const refsByType = collectMediaRefs(items, MEDIA_CONFIG);\n",
+        '''    const refsByType = collectMediaRefs(items, MEDIA_CONFIG);
+    const translationRefsByType = Object.fromEntries(
+        Object.entries(refsByType).map(([type, refs]) => [type, refs.filter((ref) => shouldTranslateMedia(ref))]),
+    );
+''',
+        "translation ref filtering",
+    )
+media_helper = media_helper.replace("hydrateFromBackend(cache, refsByType, MEDIA_CONFIG, backendState)", "hydrateFromBackend(cache, translationRefsByType, MEDIA_CONFIG, backendState)")
+media_helper = media_helper.replace("fetchBulkTranslationsForMissing(cache, refsByType, backendState)", "fetchBulkTranslationsForMissing(cache, translationRefsByType, backendState)")
+media_helper = media_helper.replace("getMissingRefs(cache, mediaType, refsByType[mediaType])", "getMissingRefs(cache, mediaType, translationRefsByType[mediaType])")
+media_helper = media_helper.replace("applyTranslationFn(target, getCachedTranslation(cache, mediaType, ref), ref);", "if (shouldTranslateMedia(ref)) applyTranslationFn(target, getCachedTranslation(cache, mediaType, ref), ref);")
+write("shared/trakt-translation-helper.mjs", media_helper)
+
+# Ensure detail responses carry language/country into the existing ref object.
 media = read("features/media-translation.mjs")
-if "const translationRef = { ...ref, language:" not in media:
-    media = require_replace(media, """    const cache = cacheUtils.loadCache(context.env);
-    const backendState = traktTranslationHelper.createBackendState(traktTranslationHelper.MEDIA_CONFIG);
-    let cacheChanged = false;
-    try {""", """    const cache = cacheUtils.loadCache(context.env);
-    const backendState = traktTranslationHelper.createBackendState(traktTranslationHelper.MEDIA_CONFIG);
-    const translationRef = { ...ref, language: data?.language ?? ref?.language ?? null, country: data?.country ?? ref?.country ?? null };
-    const shouldTranslate = traktTranslationHelper.shouldTranslateMediaRef(translationRef);
-    let cacheChanged = false;
-    if (!shouldTranslate) {
-        if (traktTranslationHelper.shouldReplaceImages()) {
-            await traktTranslationHelper.replaceImagesInPlace(data, mediaType, {
-                ...translationRef,
-                tmdbId: data?.ids?.tmdb ?? null,
-                imageMode: context.argument.posterImageMode,
-            });
-        }
+if "translationScope" not in media:
+    media = replace_once(
+        media,
+        "    const cache = cacheUtils.loadCache(context.env);\n",
+        '''    const cache = cacheUtils.loadCache(context.env);
+    if (!shouldTranslateMedia({ ...ref, language: data?.language, country: data?.country }, context.argument)) {
         return { type: "respond", body: JSON.stringify(data) };
     }
-    try {""", "detail scope guard")
+''',
+        "detail translation scope",
+    )
 write("features/media-translation.mjs", media)
 
-people = read("features/people-translation.mjs")
-if "async function shouldTranslatePeopleTarget(" not in people:
-    people = insert_before(people, r"(?m)^async function handleMediaPeopleList\(\) \{", r'''function isChineseOnlyScope() {
-    return String(globalThis.$ctx?.argument?.translationScope ?? "all").trim().toLowerCase() === "chinese_only";
-}
-
-async function shouldTranslatePeopleTarget(target) {
-    if (!isChineseOnlyScope()) return true;
-    if (!target) return false;
-    try {
-        const media = target.mediaType === mediaTypes.MEDIA_TYPE.EPISODE
-            ? await mediaTranslationHelper.fetchMediaDetail(mediaTypes.MEDIA_TYPE.SHOW, target.showTraktId)
-            : await mediaTranslationHelper.fetchMediaDetail(target.mediaType, target.traktId);
-        return mediaTranslationHelper.isChineseProductionRef(media);
-    } catch (error) {
-        globalThis.$ctx?.env?.log?.(`Chinese-only people scope check failed: ${error}`);
-        return false;
-    }
-}
-
-''', "people scope helper")
-if "await shouldTranslatePeopleTarget(target)" not in people:
-    people = require_replace(people, """    if (!target) {
-        return { type: "passThrough" };
-    }
-
-    const cache = cacheUtils.loadPeopleTranslationCache(context.env);""", """    if (!target) {
-        return { type: "passThrough" };
-    }
-
-    if (!(await shouldTranslatePeopleTarget(target))) {
-        return { type: "respond", body: JSON.stringify(data) };
-    }
-
-    const cache = cacheUtils.loadPeopleTranslationCache(context.env);""", "people list scope guard")
-for name in ["handlePersonMediaCreditsList", "handlePeopleSearchList", "handlePeopleDetail"]:
-    marker = f"async function {name}() {{\n"
-    if marker in people:
-        start_pos = people.find(marker)
-        prefix = people[start_pos:start_pos + 500]
-        if "translationScope" not in prefix:
-            people = people.replace(marker, marker + '    if (isChineseOnlyScope()) return { type: "passThrough" };\n', 1)
-write("features/people-translation.mjs", people)
-
-print("Translation scope/cache customization applied as one idempotent layer.")
+print("Translation scope/cache refactored to an independent policy module.")
