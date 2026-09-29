@@ -18,6 +18,63 @@ def require_replace(text, old, new, label):
     return text.replace(old, new, 1)
 
 
+def find_top_level_function_ranges(source, name):
+    marker = f"function {name}("
+    positions = []
+    cursor = 0
+    while True:
+        index = source.find(marker, cursor)
+        if index < 0:
+            break
+        line_start = source.rfind("\n", 0, index) + 1
+        if source[line_start:index].strip() == "":
+            positions.append(index)
+        cursor = index + len(marker)
+
+    ranges = []
+    for start in positions:
+        brace_start = source.find("{", start)
+        if brace_start < 0:
+            raise SystemExit(f"Cannot locate body for {name}")
+        depth = 0
+        quote = None
+        escaped = False
+        end = None
+        for i in range(brace_start, len(source)):
+            ch = source[i]
+            if quote:
+                if escaped:
+                    escaped = False
+                elif ch == "\\":
+                    escaped = True
+                elif ch == quote:
+                    quote = None
+                continue
+            if ch in ("'", '"', "`"):
+                quote = ch
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    end = i + 1
+                    break
+        if end is None:
+            raise SystemExit(f"Unbalanced braces in {name}")
+        line_end = source.find("\n", end)
+        ranges.append((start, len(source) if line_end < 0 else line_end + 1))
+    return ranges
+
+
+def dedupe_top_level_function(source, name):
+    ranges = find_top_level_function_ranges(source, name)
+    if len(ranges) <= 1:
+        return source
+    for start, end in reversed(ranges[1:]):
+        source = source[:start] + source[end:]
+    return source
+
+
 def insert_before(text, pattern, block, label):
     if block.strip() in text:
         return text
@@ -58,8 +115,14 @@ write("module-manifest.mjs", manifest)
 # Media scope and cache gating. The cache remains content-based; scope decides
 # whether a cached translation is allowed to be read/applied for this request.
 helper = read("shared/trakt-translation-helper.mjs")
+# Make this script self-healing even if another workflow step already inserted
+# these helpers. This removes the ordering dependency between normalization and
+# this patch and makes the patch idempotent by itself.
+for helper_name in ("isChineseProductionRef", "shouldTranslateMediaRef"):
+    helper = dedupe_top_level_function(helper, helper_name)
+
 if "function isChineseProductionRef(" not in helper:
-    helper = insert_before(helper, r"(?m)^function applyTranslation\(", '''function isChineseProductionRef(ref) {
+    helper = insert_before(helper, r"(?m)^function applyTranslation\(", r'''function isChineseProductionRef(ref) {
     const language = String(ref?.language ?? "").trim().toLowerCase();
     const rawCountry = ref?.country;
     const countries = Array.isArray(rawCountry) ? rawCountry : [rawCountry];
@@ -76,6 +139,7 @@ function shouldTranslateMediaRef(ref) {
 }
 
 ''', "media scope helpers")
+
 if "language: item?.show?.language ?? null" not in helper:
     helper = require_replace(helper, "        sourceTitle: episode?.title ?? null,\n        availableTranslations:", "        sourceTitle: episode?.title ?? null,\n        language: item?.show?.language ?? null,\n        country: item?.show?.country ?? null,\n        availableTranslations:", "episode language inheritance")
 if "if (ref && shouldTranslateMediaRef(ref))" not in helper:
@@ -96,6 +160,9 @@ helper = helper.replace("fetchBulkTranslationsForMissing(cache, refsByType, back
 helper = helper.replace("getMissingRefs(cache, mediaType, refsByType[mediaType])", "getMissingRefs(cache, mediaType, translationRefsByType[mediaType])")
 if "isChineseProductionRef," not in helper:
     helper = require_replace(helper, "    isPosterImageReplacementUserAgent,\n", "    isChineseProductionRef,\n    isPosterImageReplacementUserAgent,\n", "helper export")
+
+for helper_name in ("isChineseProductionRef", "shouldTranslateMediaRef"):
+    helper = dedupe_top_level_function(helper, helper_name)
 write("shared/trakt-translation-helper.mjs", helper)
 
 # Detail endpoints gate both backend/cache translation and Google fallback.
@@ -125,7 +192,7 @@ write("features/media-translation.mjs", media)
 # People pages: in chinese_only mode, translate only when their parent media is Chinese.
 people = read("features/people-translation.mjs")
 if "async function shouldTranslatePeopleTarget(" not in people:
-    people = insert_before(people, r"(?m)^async function handleMediaPeopleList\(\) \{", '''function isChineseOnlyScope() {
+    people = insert_before(people, r"(?m)^async function handleMediaPeopleList\(\) \{", r'''function isChineseOnlyScope() {
     return String(globalThis.$ctx?.argument?.translationScope ?? "all").trim().toLowerCase() === "chinese_only";
 }
 
