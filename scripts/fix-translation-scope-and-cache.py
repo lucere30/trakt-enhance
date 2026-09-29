@@ -27,26 +27,70 @@ def insert_before(text, pattern, block, label):
     return text[:m.start()] + block + text[m.start():]
 
 
-# Repair the public argument insertion performed by the previous patch script.
+# Normalize the argumentFields array after the legacy EplayerX restoration and
+# custom controls. Rebuilding this small declarative section avoids fragile
+# brace-level patching and gives every future upstream build the same schema.
 manifest = read("module-manifest.mjs")
-for key in ["historyRequestEnhancementEnabled", "translationScope", "playerInjectionEnabled"]:
-    pattern = rf'\n    \{{\n(        key: "{re.escape(key)}",.*?\n    \}},\n)(        key: "(?:translationEngine|characterTranslationEnabled|forwardButtonOrder)",)'
-    match = re.search(pattern, manifest, flags=re.DOTALL)
-    if match:
-        block = match.group(1)
-        replacement = "\n" + block + "    {\n" + match.group(2)
-        manifest = manifest[:match.start()] + replacement + manifest[match.end():]
+start = manifest.find("const argumentFields = [")
+end = manifest.find("\nconst ALL_ARGUMENT_KEYS", start)
+if start < 0 or end < 0:
+    raise SystemExit("argumentFields section not found")
+
+argument_fields = '''const argumentFields = [
+    { key: "fakeVipEnabled", defaultValue: true, type: "boolean", tag: "伪装成 VIP", desc: "启用后伪装为 Trakt VIP 会员，移除 App 中的广告" },
+    { key: "posterImageMode", defaultValue: "original", type: "select", options: ["原片语言", "中文", "原图"], optionValues: ["original", "chinese", "default"], tag: "海报语言", desc: "选择海报语言或保留原图" },
+    { key: "historyEpisodesMergedByShow", defaultValue: true, type: "boolean", tag: "历史剧集按电视剧合并", desc: "将历史页面电视剧观看记录按电视剧合并" },
+    { key: "historyRequestEnhancementEnabled", defaultValue: true, type: "boolean", tag: "历史请求增强", desc: "提高历史剧集请求的 limit 以减少分页" },
+    { key: "translationEngine", defaultValue: "google", type: "select", options: ["谷歌翻译", "DeepLX", "关闭"], optionValues: ["google", "deeplx", "off"], tag: "翻译部分文本", desc: "选择翻译引擎" },
+    { key: "translationScope", defaultValue: "all", type: "select", options: ["全部作品", "仅中文/华语作品", "关闭媒体翻译"], optionValues: ["all", "chinese_only", "off"], tag: "媒体翻译范围", desc: "中文/华语模式按 Trakt 的 language/country 判断" },
+    { key: "characterTranslationEnabled", defaultValue: true, type: "boolean", tag: "用豆瓣翻译角色名", desc: "启用后使用豆瓣翻译角色名" },
+    { key: "playerInjectionEnabled", defaultValue: true, type: "boolean", tag: "播放器注入", desc: "播放器注入总开关" },
+    { key: "eplayerxButtonOrder", defaultValue: 1, type: "select", options: ["1", "2", "3", "0"], optionValues: [1, 2, 3, 0], tag: "EplayerX 跳转按钮", desc: "序号代表排序位置，0 不显示" },
+    { key: "forwardButtonOrder", defaultValue: 1, type: "select", options: ["1", "2", "3", "0"], optionValues: [1, 2, 3, 0], tag: "Forward 跳转按钮", desc: "序号代表排序位置，0 不显示" },
+    { key: "infuseButtonOrder", defaultValue: 2, type: "select", options: ["1", "2", "3", "0"], optionValues: [1, 2, 3, 0], tag: "Infuse 跳转按钮", desc: "序号代表排序位置，0 不显示" },
+    { key: "rexButtonOrder", defaultValue: 3, type: "select", options: ["1", "2", "3", "0"], optionValues: [1, 2, 3, 0], tag: "Rex 跳转按钮", desc: "序号代表排序位置，0 不显示" },
+    { key: "backendBaseUrl", defaultValue: DEFAULT_BACKEND_BASE_URL, type: "text", tag: "翻译缓存接口", desc: "用于批量获取 Trakt 中文翻译，一般留空即可" },
+    { key: "debugMode", defaultValue: "off", type: "select", options: ["关闭", "禁用本地缓存", "禁用远端缓存", "禁用所有缓存"], optionValues: ["off", "disableLocal", "disableRemote", "disableAll"], tag: "调试模式", desc: "控制本地与远端缓存" },
+];'''
+manifest = manifest[:start] + argument_fields + manifest[end:]
 write("module-manifest.mjs", manifest)
 
+# Media scope and cache gating. The cache remains content-based; scope decides
+# whether a cached translation is allowed to be read/applied for this request.
 helper = read("shared/trakt-translation-helper.mjs")
 if "function isChineseProductionRef(" not in helper:
-    helper = insert_before(helper, r"(?m)^function applyTranslation\(", '''function isChineseProductionRef(ref) {\n    const language = String(ref?.language ?? "").trim().toLowerCase();\n    const rawCountry = ref?.country;\n    const countries = Array.isArray(rawCountry) ? rawCountry : [rawCountry];\n    const countrySet = new Set(countries.flatMap((value) => String(value ?? "").split(/[,|\\s]+/)).map((value) => value.trim().toLowerCase()).filter(Boolean));\n    return language === "zh" || ["cn", "hk", "tw", "sg", "mo"].some((country) => countrySet.has(country));\n}\n\nfunction shouldTranslateMediaRef(ref) {\n    const argument = globalThis.$ctx?.argument ?? {};\n    const engine = String(argument.translationEngine ?? "google").trim().toLowerCase();\n    const scope = String(argument.translationScope ?? "all").trim().toLowerCase();\n    if (engine === "off" || scope === "off") return false;\n    return scope !== "chinese_only" || isChineseProductionRef(ref);\n}\n\n''', "media scope helpers")
+    helper = insert_before(helper, r"(?m)^function applyTranslation\(", '''function isChineseProductionRef(ref) {
+    const language = String(ref?.language ?? "").trim().toLowerCase();
+    const rawCountry = ref?.country;
+    const countries = Array.isArray(rawCountry) ? rawCountry : [rawCountry];
+    const countrySet = new Set(countries.flatMap((value) => String(value ?? "").split(/[,|\s]+/)).map((value) => value.trim().toLowerCase()).filter(Boolean));
+    return language === "zh" || ["cn", "hk", "tw", "sg", "mo"].some((country) => countrySet.has(country));
+}
+
+function shouldTranslateMediaRef(ref) {
+    const argument = globalThis.$ctx?.argument ?? {};
+    const engine = String(argument.translationEngine ?? "google").trim().toLowerCase();
+    const scope = String(argument.translationScope ?? "all").trim().toLowerCase();
+    if (engine === "off" || scope === "off") return false;
+    return scope !== "chinese_only" || isChineseProductionRef(ref);
+}
+
+''', "media scope helpers")
 if "language: item?.show?.language ?? null" not in helper:
     helper = require_replace(helper, "        sourceTitle: episode?.title ?? null,\n        availableTranslations:", "        sourceTitle: episode?.title ?? null,\n        language: item?.show?.language ?? null,\n        country: item?.show?.country ?? null,\n        availableTranslations:", "episode language inheritance")
 if "if (ref && shouldTranslateMediaRef(ref))" not in helper:
-    helper = require_replace(helper, """            if (ref) {\n                applyTranslationFn(target, getCachedTranslation(cache, mediaType, ref), ref);\n            }""", """            if (ref && shouldTranslateMediaRef(ref)) {\n                applyTranslationFn(target, getCachedTranslation(cache, mediaType, ref), ref);\n            }""", "cached translation application guard")
+    helper = require_replace(helper, """            if (ref) {
+                applyTranslationFn(target, getCachedTranslation(cache, mediaType, ref), ref);
+            }""", """            if (ref && shouldTranslateMediaRef(ref)) {
+                applyTranslationFn(target, getCachedTranslation(cache, mediaType, ref), ref);
+            }""", "cached translation application guard")
 if "const translationRefsByType = createMediaCollection(MEDIA_CONFIG);" not in helper:
-    helper = require_replace(helper, "    const refsByType = collectMediaRefs(items, MEDIA_CONFIG);\n    const shouldReplaceMediaImages = shouldReplaceImages();", """    const refsByType = collectMediaRefs(items, MEDIA_CONFIG);\n    const translationRefsByType = createMediaCollection(MEDIA_CONFIG);\n    Object.keys(MEDIA_CONFIG).forEach((mediaType) => {\n        translationRefsByType[mediaType] = refsByType[mediaType].filter((ref) => shouldTranslateMediaRef(ref));\n    });\n    const shouldReplaceMediaImages = shouldReplaceImages();""", "translation ref filtering")
+    helper = require_replace(helper, "    const refsByType = collectMediaRefs(items, MEDIA_CONFIG);\n    const shouldReplaceMediaImages = shouldReplaceImages();", """    const refsByType = collectMediaRefs(items, MEDIA_CONFIG);
+    const translationRefsByType = createMediaCollection(MEDIA_CONFIG);
+    Object.keys(MEDIA_CONFIG).forEach((mediaType) => {
+        translationRefsByType[mediaType] = refsByType[mediaType].filter((ref) => shouldTranslateMediaRef(ref));
+    });
+    const shouldReplaceMediaImages = shouldReplaceImages();""", "translation ref filtering")
 helper = helper.replace("hydrateFromBackend(cache, refsByType, MEDIA_CONFIG, backendState)", "hydrateFromBackend(cache, translationRefsByType, MEDIA_CONFIG, backendState)")
 helper = helper.replace("fetchBulkTranslationsForMissing(cache, refsByType, backendState)", "fetchBulkTranslationsForMissing(cache, translationRefsByType, backendState)")
 helper = helper.replace("getMissingRefs(cache, mediaType, refsByType[mediaType])", "getMissingRefs(cache, mediaType, translationRefsByType[mediaType])")
@@ -54,16 +98,66 @@ if "isChineseProductionRef," not in helper:
     helper = require_replace(helper, "    isPosterImageReplacementUserAgent,\n", "    isChineseProductionRef,\n    isPosterImageReplacementUserAgent,\n", "helper export")
 write("shared/trakt-translation-helper.mjs", helper)
 
+# Detail endpoints gate both backend/cache translation and Google fallback.
 media = read("features/media-translation.mjs")
 if "const shouldTranslate = traktTranslationHelper.shouldTranslateMediaRef" not in media:
-    media = require_replace(media, """    const cache = cacheUtils.loadCache(context.env);\n    const backendState = traktTranslationHelper.createBackendState(traktTranslationHelper.MEDIA_CONFIG);\n    let cacheChanged = false;\n    try {""", """    const cache = cacheUtils.loadCache(context.env);\n    const backendState = traktTranslationHelper.createBackendState(traktTranslationHelper.MEDIA_CONFIG);\n    const translationRef = { ...ref, language: data?.language ?? ref?.language ?? null, country: data?.country ?? ref?.country ?? null };\n    const shouldTranslate = traktTranslationHelper.shouldTranslateMediaRef(translationRef);\n    let cacheChanged = false;\n    if (!shouldTranslate) {\n        if (traktTranslationHelper.shouldReplaceImages()) {\n            await traktTranslationHelper.replaceImagesInPlace(data, mediaType, {\n                ...translationRef,\n                tmdbId: data?.ids?.tmdb ?? null,\n                imageMode: context.argument.posterImageMode,\n            });\n        }\n        return { type: "respond", body: JSON.stringify(data) };\n    }\n    try {""", "detail scope guard")
+    media = require_replace(media, """    const cache = cacheUtils.loadCache(context.env);
+    const backendState = traktTranslationHelper.createBackendState(traktTranslationHelper.MEDIA_CONFIG);
+    let cacheChanged = false;
+    try {""", """    const cache = cacheUtils.loadCache(context.env);
+    const backendState = traktTranslationHelper.createBackendState(traktTranslationHelper.MEDIA_CONFIG);
+    const translationRef = { ...ref, language: data?.language ?? ref?.language ?? null, country: data?.country ?? ref?.country ?? null };
+    const shouldTranslate = traktTranslationHelper.shouldTranslateMediaRef(translationRef);
+    let cacheChanged = false;
+    if (!shouldTranslate) {
+        if (traktTranslationHelper.shouldReplaceImages()) {
+            await traktTranslationHelper.replaceImagesInPlace(data, mediaType, {
+                ...translationRef,
+                tmdbId: data?.ids?.tmdb ?? null,
+                imageMode: context.argument.posterImageMode,
+            });
+        }
+        return { type: "respond", body: JSON.stringify(data) };
+    }
+    try {""", "detail scope guard")
 write("features/media-translation.mjs", media)
 
+# People pages: in chinese_only mode, translate only when their parent media is Chinese.
 people = read("features/people-translation.mjs")
 if "async function shouldTranslatePeopleTarget(" not in people:
-    people = insert_before(people, r"(?m)^async function handleMediaPeopleList\(\) \{", '''function isChineseOnlyScope() {\n    return String(globalThis.$ctx?.argument?.translationScope ?? "all").trim().toLowerCase() === "chinese_only";\n}\n\nasync function shouldTranslatePeopleTarget(target) {\n    if (!isChineseOnlyScope()) return true;\n    if (!target) return false;\n    try {\n        const media = target.mediaType === mediaTypes.MEDIA_TYPE.EPISODE\n            ? await mediaTranslationHelper.fetchMediaDetail(mediaTypes.MEDIA_TYPE.SHOW, target.showTraktId)\n            : await mediaTranslationHelper.fetchMediaDetail(target.mediaType, target.traktId);\n        return mediaTranslationHelper.isChineseProductionRef(media);\n    } catch (error) {\n        globalThis.$ctx?.env?.log?.(`Chinese-only people scope check failed: ${error}`);\n        return false;\n    }\n}\n\n''', "people scope helper")
+    people = insert_before(people, r"(?m)^async function handleMediaPeopleList\(\) \{", '''function isChineseOnlyScope() {
+    return String(globalThis.$ctx?.argument?.translationScope ?? "all").trim().toLowerCase() === "chinese_only";
+}
+
+async function shouldTranslatePeopleTarget(target) {
+    if (!isChineseOnlyScope()) return true;
+    if (!target) return false;
+    try {
+        const media = target.mediaType === mediaTypes.MEDIA_TYPE.EPISODE
+            ? await mediaTranslationHelper.fetchMediaDetail(mediaTypes.MEDIA_TYPE.SHOW, target.showTraktId)
+            : await mediaTranslationHelper.fetchMediaDetail(target.mediaType, target.traktId);
+        return mediaTranslationHelper.isChineseProductionRef(media);
+    } catch (error) {
+        globalThis.$ctx?.env?.log?.(`Chinese-only people scope check failed: ${error}`);
+        return false;
+    }
+}
+
+''', "people scope helper")
 if "await shouldTranslatePeopleTarget(target)" not in people:
-    people = require_replace(people, """    if (!target) {\n        return { type: \"passThrough\" };\n    }\n\n    const cache = cacheUtils.loadPeopleTranslationCache(context.env);""", """    if (!target) {\n        return { type: \"passThrough\" };\n    }\n\n    if (!(await shouldTranslatePeopleTarget(target))) {\n        return { type: \"respond\", body: JSON.stringify(data) };\n    }\n\n    const cache = cacheUtils.loadPeopleTranslationCache(context.env);""", "people list scope guard")
+    people = require_replace(people, """    if (!target) {
+        return { type: "passThrough" };
+    }
+
+    const cache = cacheUtils.loadPeopleTranslationCache(context.env);""", """    if (!target) {
+        return { type: "passThrough" };
+    }
+
+    if (!(await shouldTranslatePeopleTarget(target))) {
+        return { type: "respond", body: JSON.stringify(data) };
+    }
+
+    const cache = cacheUtils.loadPeopleTranslationCache(context.env);""", "people list scope guard")
 for name in ["handlePersonMediaCreditsList", "handlePeopleSearchList", "handlePeopleDetail"]:
     marker = f"async function {name}() {{\n"
     guard = '    if (isChineseOnlyScope()) return { type: "passThrough" };\n'
