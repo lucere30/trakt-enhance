@@ -1,4 +1,6 @@
-# Sync pipeline v5: upstream-first, isolated translation policy, validate-before-build.
+# Sync pipeline v6. The workflow only orchestrates; all logic lives in scripts/:
+#   restore-eplayerx.sh -> apply-customizations.py -> install-translation-policy.py
+#   -> validate-source.py -> build -> publish.py
 name: Sync upstream Trakt plugin
 
 on:
@@ -8,9 +10,7 @@ on:
   push:
     paths:
       - .github/workflows/sync-upstream.yml
-      - scripts/apply-customizations.py
-      - scripts/fix-translation-scope-and-cache.py
-      - scripts/validate-translation-architecture.py
+      - scripts/**
 
 permissions:
   contents: write
@@ -26,142 +26,47 @@ jobs:
       - name: Checkout this repository
         uses: actions/checkout@v4
 
-      - name: Clone upstream with full history
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Full history is required: the EplayerX restore replays commits made after its removal.
+      - name: Clone upstream
         run: git clone https://github.com/DemoJameson/Proxy.Modules.git upstream
 
-      - name: Restore EplayerX into current upstream source
-        working-directory: upstream
-        shell: bash
-        run: |
-          set -euo pipefail
-          removal="0886a1d912cfa78a395e5a37278903be9537c1f6"
-          parent="$(git rev-parse "${removal}^")"
-          head="$(git rev-parse origin/main)"
-          source_path="trakt_simplified_chinese/src"
-          cp "$source_path/argument.mjs" /tmp/current-argument.mjs
-          git checkout "$parent" -- "$source_path"
-          git diff --binary "$removal" "$head" -- "$source_path" ':!trakt_simplified_chinese/src/argument.mjs' > /tmp/upstream-source-after-removal.patch
-          if [ -s /tmp/upstream-source-after-removal.patch ]; then
-            git apply --3way /tmp/upstream-source-after-removal.patch
-          fi
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path("/tmp/current-argument.mjs")
-          s = p.read_text()
-          if 'eplayerxButtonOrder: "eplayerx"' not in s:
-              s = s.replace('const PLAYER_BUTTON_ARGUMENT_GROUP_KEYS = {\n', 'const PLAYER_BUTTON_ARGUMENT_GROUP_KEYS = {\n    eplayerxButtonOrder: "eplayerx",\n', 1)
-          if 'eplayerx: 1,' not in s:
-              s = s.replace('function createDefaultPlayerButtonOrderConfig() {\n    return {\n', 'function createDefaultPlayerButtonOrderConfig() {\n    return {\n        eplayerx: 1,\n', 1)
-          p.write_text(s)
-          PY
-          grep -R -q 'EPLAYERX' "$source_path"
-          grep -R -q 'eplayerxButtonOrder' "$source_path"
-          grep -q 'eplayerx: 1' "$source_path/argument.mjs"
+      - name: Restore EplayerX
+        run: scripts/restore-eplayerx.sh
 
       - name: Apply custom feature controls
         run: python3 scripts/apply-customizations.py
 
-      - name: Apply isolated translation scope and cache policy
-        run: python3 scripts/fix-translation-scope-and-cache.py
+      - name: Install translation scope policy
+        run: python3 scripts/install-translation-policy.py
 
-      - name: Prebuild architecture validation
+      - name: Validate patched source
+        run: python3 scripts/validate-source.py
+
+      - name: Build
         working-directory: upstream
-        shell: bash
         run: |
-          set -euo pipefail
-          python3 -m py_compile ../scripts/apply-customizations.py ../scripts/fix-translation-scope-and-cache.py ../scripts/validate-translation-architecture.py
-          python3 ../scripts/validate-translation-architecture.py
-          for f in \
-            trakt_simplified_chinese/src/module-manifest.mjs \
-            trakt_simplified_chinese/src/argument.mjs \
-            trakt_simplified_chinese/src/shared/trakt-translation-helper.mjs \
-            trakt_simplified_chinese/src/shared/translation-scope-policy.mjs \
-            trakt_simplified_chinese/src/features/people-translation.mjs \
-            trakt_simplified_chinese/src/features/history-episodes-merged-by-show.mjs \
-            trakt_simplified_chinese/src/features/player-injection-sofatime.mjs \
-            trakt_simplified_chinese/src/features/player-injection-trakt.mjs; do
-            node --check "$f"
-          done
-          ! grep -R -n -E 'function[[:space:]]+(isChineseProductionRef|shouldTranslateMediaRef)[[:space:]]*\(' trakt_simplified_chinese/src/shared/trakt-translation-helper.mjs
-          test "$(grep -c 'import { shouldTranslateMedia } from "./translation-scope-policy.mjs";' trakt_simplified_chinese/src/shared/trakt-translation-helper.mjs)" -eq 1
+          npm ci
+          npm run build:trakt
 
-      - name: Install dependencies
-        working-directory: upstream
-        run: npm ci
-
-      - name: Build upstream plugin with EplayerX restored
-        working-directory: upstream
-        run: npm run build:trakt
-
-      - name: Validate custom feature controls
-        working-directory: upstream
-        shell: bash
-        run: |
-          set -euo pipefail
-          src="trakt_simplified_chinese/src"
-          grep -q 'key: "translationScope"' "$src/module-manifest.mjs"
-          grep -q 'key: "historyRequestEnhancementEnabled"' "$src/module-manifest.mjs"
-          grep -q 'key: "playerInjectionEnabled"' "$src/module-manifest.mjs"
-          grep -q 'key: "eplayerxButtonOrder"' "$src/module-manifest.mjs"
-          grep -q 'historyRequestEnhancementEnabled' "$src/features/history-episodes-merged-by-show.mjs"
-          grep -q 'playerInjectionEnabled' "$src/features/player-injection-sofatime.mjs"
-          grep -q 'playerInjectionEnabled' "$src/features/player-injection-trakt.mjs"
-          grep -q 'translationRefsByType' "$src/shared/trakt-translation-helper.mjs"
-          grep -q 'shouldTranslateMedia(ref)' "$src/shared/trakt-translation-helper.mjs"
-          grep -q 'shouldTranslateMedia' "$src/shared/translation-scope-policy.mjs"
-
-      - name: Publish plugin and mirror runtime assets
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p trakt_simplified_chinese/images
-          cp upstream/trakt_simplified_chinese/trakt_simplified_chinese.js trakt_simplified_chinese/trakt_simplified_chinese.js
-          cp upstream/trakt_simplified_chinese/images/trakt.webp trakt_simplified_chinese/images/trakt.webp
-          sed \
-            -e 's#https://raw.githubusercontent.com/DemoJameson/Proxy.Modules/main/trakt_simplified_chinese/trakt_simplified_chinese.js#https://raw.githubusercontent.com/lucere30/trakt-enhance/main/trakt_simplified_chinese/trakt_simplified_chinese.js#g' \
-            -e 's#https://raw.githubusercontent.com/DemoJameson/Proxy.Modules/main/trakt_simplified_chinese/images/trakt.webp#https://raw.githubusercontent.com/lucere30/trakt-enhance/main/trakt_simplified_chinese/images/trakt.webp#g' \
-            -e 's#https://github.com/DemoJameson/Proxy.Modules#https://github.com/lucere30/trakt-enhance#g' \
-            upstream/trakt_simplified_chinese/trakt_simplified_chinese.plugin > trakt_simplified_chinese/trakt_simplified_chinese.plugin
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path("trakt_simplified_chinese/trakt_simplified_chinese.plugin")
-          lines = p.read_text(encoding="utf-8").splitlines()
-          master_i = next((i for i, line in enumerate(lines) if line.startswith("playerInjectionEnabled = ")), None)
-          eplayer_i = next((i for i, line in enumerate(lines) if line.startswith("eplayerxButtonOrder = ")), None)
-          if master_i is None or eplayer_i is None:
-              raise SystemExit("Required player options are missing from generated plugin")
-          if master_i > eplayer_i:
-              master_line = lines.pop(master_i)
-              eplayer_i = next(i for i, line in enumerate(lines) if line.startswith("eplayerxButtonOrder = "))
-              lines.insert(eplayer_i, master_line)
-          p.write_text("\n".join(lines) + "\n", encoding="utf-8")
-          PY
-          test -s trakt_simplified_chinese/trakt_simplified_chinese.plugin
-          test -s trakt_simplified_chinese/trakt_simplified_chinese.js
-          test -s trakt_simplified_chinese/images/trakt.webp
-          grep -q 'EplayerX' trakt_simplified_chinese/trakt_simplified_chinese.plugin
-          grep -q 'translationScope' trakt_simplified_chinese/trakt_simplified_chinese.plugin
-          grep -q 'historyRequestEnhancementEnabled' trakt_simplified_chinese/trakt_simplified_chinese.plugin
-          grep -q 'playerInjectionEnabled' trakt_simplified_chinese/trakt_simplified_chinese.plugin
-          grep -q 'lucere30/trakt-enhance/main/trakt_simplified_chinese/trakt_simplified_chinese.js' trakt_simplified_chinese/trakt_simplified_chinese.plugin
-          grep -q 'lucere30/trakt-enhance/main/trakt_simplified_chinese/images/trakt.webp' trakt_simplified_chinese/trakt_simplified_chinese.plugin
-          grep -q 'github.com/lucere30/trakt-enhance' trakt_simplified_chinese/trakt_simplified_chinese.plugin
-          ! grep -q 'DemoJameson/Proxy.Modules' trakt_simplified_chinese/trakt_simplified_chinese.plugin
-          ! grep -q 'DemoJameson/Proxy.Modules' trakt_simplified_chinese/trakt_simplified_chinese.js
-
-      - name: Remove generated upstream checkout
-        run: rm -rf upstream
+      - name: Publish artifacts
+        run: python3 scripts/publish.py
 
       - name: Commit changes
         shell: bash
         run: |
           set -euo pipefail
+          upstream_sha="$(git -C upstream rev-parse --short HEAD)"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A trakt_simplified_chinese
           if git diff --cached --quiet; then
-            echo "No upstream changes."
+            echo "No changes."
             exit 0
           fi
-          git commit -m "Sync upstream plugin and restore EplayerX"
+          git commit -m "Sync upstream ${upstream_sha}"
           git push
