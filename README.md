@@ -1,10 +1,10 @@
-# Trakt 增强（Loon 插件）
+# Trakt 增强
 
 让 Trakt App 显示简体中文标题、简介和海报，并在影片详情页添加 EplayerX、Forward、Infuse、Rex 跳转按钮。
 
 ## 安装
 
-在 Loon 里添加插件：
+添加插件：
 
 ```
 https://raw.githubusercontent.com/lucere30/trakt-enhance/main/trakt_simplified_chinese/trakt_simplified_chinese.plugin
