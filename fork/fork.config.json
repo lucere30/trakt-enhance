@@ -24,6 +24,7 @@
         "translationEngine",
         "peopleTranslationEnabled",
         "characterTranslationEnabled",
+        "chinesePosterEnabled",
         "posterImageMode",
         "historyEpisodesMergedByShow",
         "eplayerxButtonOrder",

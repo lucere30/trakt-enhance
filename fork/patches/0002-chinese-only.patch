@@ -1,65 +1,72 @@
-From 63f3161b870d9d8022cbefea8e9a681229a9eca8 Mon Sep 17 00:00:00 2001
+From 62d9319bff9963342bbe24c79c83805f6ffd8438 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
-Date: Wed, 30 Sep 2026 17:58:18 +0000
+Date: Wed, 30 Sep 2026 18:27:45 +0000
 Subject: [PATCH] =?UTF-8?q?feat(trakt):=20=E5=8F=AA=E7=BF=BB=E8=AF=91?=
- =?UTF-8?q?=E4=B8=AD=E6=96=87=E5=BD=B1=E8=A7=86?=
+ =?UTF-8?q?=E4=B8=AD=E6=96=87=E5=BD=B1=E8=A7=86=E3=80=81=E4=B8=AD=E6=96=87?=
+ =?UTF-8?q?=E5=BD=B1=E8=A7=86=E7=94=A8=E4=B8=AD=E6=96=87=E5=8E=9F=E6=B5=B7?=
+ =?UTF-8?q?=E6=8A=A5?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
 新增开关「只翻译中文影视」（默认开启）：只翻译原始语言为中文的剧集和电影，
-其他语言的标题、简介、集数、评论、演职员等保留 Trakt 原文；海报对所有影视
-按「海报语言」处理（与原插件一致）。另加「人物页翻译」开关。
+其他语言的标题、简介、集数、评论、演职员等保留 Trakt 原文。
+新增开关「中文影视用中文原海报」（默认开启）：中文影视固定按原片语言取
+TMDb 中文海报（优先原产地区版本），其他影视按「海报语言」。
+另加「人物页翻译」开关。
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01YH4kK6jKSf8gmN4WbmGa5W
 ---
- tests/helpers/trakt-test-helpers.mjs          |   3 +
- tests/trakt_translation_scope.test.mjs        | 375 ++++++++++++++++++
+ tests/helpers/trakt-test-helpers.mjs          |   5 +
+ tests/trakt_translation_scope.test.mjs        | 478 ++++++++++++++++++
  .../src/features/comments-translation.mjs     |   9 +-
- .../src/features/media-translation.mjs        |  42 ++
- .../src/module-manifest.mjs                   |  14 +
+ .../src/features/media-translation.mjs        |  60 ++-
+ .../src/module-manifest.mjs                   |  23 +-
  trakt_simplified_chinese/src/response.mjs     |   7 +-
- .../src/shared/trakt-translation-helper.mjs   |  15 +-
- .../src/shared/translation-scope.mjs          | 314 +++++++++++++++
- 8 files changed, 769 insertions(+), 10 deletions(-)
+ .../src/shared/media-image-replacement.mjs    |  38 +-
+ .../src/shared/trakt-translation-helper.mjs   |  17 +-
+ .../src/shared/translation-scope.mjs          | 366 ++++++++++++++
+ 9 files changed, 979 insertions(+), 24 deletions(-)
  create mode 100644 tests/trakt_translation_scope.test.mjs
  create mode 100644 trakt_simplified_chinese/src/shared/translation-scope.mjs
 
 diff --git a/tests/helpers/trakt-test-helpers.mjs b/tests/helpers/trakt-test-helpers.mjs
-index 258c774..b10c20e 100644
+index 258c774..37badb7 100644
 --- a/tests/helpers/trakt-test-helpers.mjs
 +++ b/tests/helpers/trakt-test-helpers.mjs
 @@ -279,6 +279,7 @@ function createWrappedMovieBody() {
  
  // 测试默认引擎固定为 deeplx，复用既有 DeepLX mock 断言，避免 39 个集成测试因默认引擎改为 google 而失效。
  // 需要验证 google 默认引擎的用例在 argument 中显式指定 translationEngine: "google" 并 mock translate-pa 端点。
-+// “仅处理中文原片”同理固定为关闭（上游行为）；验证该功能的用例显式传 chineseOnlyTranslation: true。
++// “只翻译中文影视”“中文影视用中文原海报”同理固定为关闭（上游行为）；验证这些功能的用例显式传 true。
  function runResponseCase(input) {
      const { argument, headers, ...rest } = input ?? {};
      return runScript({
-@@ -286,6 +287,7 @@ function runResponseCase(input) {
+@@ -286,6 +287,8 @@ function runResponseCase(input) {
          ...rest,
          argument: {
              translationEngine: "deeplx",
 +            chineseOnlyTranslation: false,
++            chinesePosterEnabled: false,
              ...argument,
          },
          headers: {
-@@ -302,6 +304,7 @@ function runRequestCase(input) {
+@@ -302,6 +305,8 @@ function runRequestCase(input) {
          ...rest,
          argument: {
              translationEngine: "deeplx",
 +            chineseOnlyTranslation: false,
++            chinesePosterEnabled: false,
              ...argument,
          },
      });
 diff --git a/tests/trakt_translation_scope.test.mjs b/tests/trakt_translation_scope.test.mjs
 new file mode 100644
-index 0000000..5589b77
+index 0000000..9b5d84e
 --- /dev/null
 +++ b/tests/trakt_translation_scope.test.mjs
-@@ -0,0 +1,375 @@
+@@ -0,0 +1,478 @@
 +import assert from "node:assert/strict";
 +import test from "node:test";
 +
@@ -419,7 +426,7 @@ index 0000000..5589b77
 +    assert.equal(payload[0].movie.images.poster[0], TMDB_CN_POSTER);
 +});
 +
-+test("中文电影详情：文字照常翻译，「海报语言=原图」时保留 Trakt 海报", async () => {
++test("中文电影详情：关闭「中文影视用中文原海报」且「海报语言=原图」时保留 Trakt 海报", async () => {
 +    const { result, httpLogs } = await runResponseCase({
 +        url: "https://api.trakt.tv/movies/123",
 +        body: JSON.stringify(createMovie({ language: "zh", country: "cn" })),
@@ -434,6 +441,109 @@ index 0000000..5589b77
 +        httpLogs.some((log) => log.url.startsWith("https://api.tmdb.org/3/")),
 +        false,
 +    );
++});
++
++// ---------- 中文影视用中文原海报 ----------
++
++const POSTER_ON = { ...ON, chinesePosterEnabled: true };
++const TMDB_MOVIE_789_ZH_IMAGES_URL = `https://api.tmdb.org/3/movie/789/images?language=zh&api_key=${TEST_TMDB_API_KEY}`;
++const TMDB_TW_POSTER = "https://image.tmdb.org/t/p/w780/tw-poster.jpg";
++const TRAKT_POSTER_789 = "https://walter.trakt.tv/images/movies/000/000/789/posters/original.jpg";
++
++function createTaiwanMovie() {
++    return createMovie({
++        title: "Taiwan Movie",
++        ids: { trakt: 789, tmdb: 789 },
++        language: "zh",
++        country: "tw",
++        images: { poster: [TRAKT_POSTER_789] },
++    });
++}
++
++function createTaiwanPosterMock() {
++    return {
++        [TMDB_MOVIE_789_ZH_IMAGES_URL]: createTmdbImagesResponse([
++            { iso_639_1: "zh", iso_3166_1: "CN", file_path: "/cn-poster.jpg", vote_average: 9, vote_count: 50 },
++            { iso_639_1: "zh", iso_3166_1: "TW", file_path: "/tw-poster.jpg", vote_average: 5, vote_count: 5 },
++        ]),
++    };
++}
++
++function isImageRequest(log) {
++    return log.url.startsWith("https://api.tmdb.org/3/") || log.url.includes("/images");
++}
++
++test("中文原海报开启 +「海报语言=原图」：台湾电影详情用原产地区（台版）中文海报", async () => {
++    const { result } = await runResponseCase({
++        url: "https://api.trakt.tv/movies/789",
++        body: JSON.stringify(createTaiwanMovie()),
++        argument: { ...POSTER_ON, posterImageMode: "default" },
++        httpGetMocks: createTaiwanPosterMock(),
++        persistentData: createPersistentData({ "movie:789": createMediaTranslationEntry({ translation: { title: "台湾电影" } }) }),
++    });
++
++    const payload = JSON.parse(result.body);
++    assert.equal(payload.title, "台湾电影");
++    assert.equal(payload.images.poster[0], TMDB_TW_POSTER);
++});
++
++test("中文原海报开启 +「海报语言=原图」：英语电影详情原样放行，不请求任何海报", async () => {
++    const { result, httpLogs } = await runResponseCase({
++        url: "https://api.trakt.tv/movies/123",
++        body: JSON.stringify(createMovie()),
++        argument: { ...POSTER_ON, posterImageMode: "default" },
++        httpGetMocks: createChinesePosterMock(),
++    });
++
++    assert.equal(result.body, undefined);
++    assert.equal(httpLogs.some(isImageRequest), false);
++});
++
++test("中文原海报开启 +「海报语言=原图」：列表里只给中文电影换海报，英语电影不请求海报", async () => {
++    const { result, httpLogs } = await runResponseCase({
++        url: "https://api.trakt.tv/users/me/watchlist",
++        body: JSON.stringify([
++            { type: "movie", movie: createMovie() },
++            { type: "movie", movie: createTaiwanMovie() },
++        ]),
++        argument: { ...POSTER_ON, posterImageMode: "default" },
++        httpGetMocks: { ...createChinesePosterMock(), ...createTaiwanPosterMock() },
++    });
++
++    const payload = JSON.parse(result.body);
++    assert.equal(payload[0].movie.images.poster[0], TRAKT_POSTER);
++    assert.equal(payload[1].movie.images.poster[0], TMDB_TW_POSTER);
++    assert.equal(
++        httpLogs.some((log) => log.url.includes("/movie/456/")),
++        false,
++    );
++});
++
++test("中文原海报开启 +「海报语言=中文」：同一列表里英语电影用中文海报，台湾电影用台版海报", async () => {
++    const { result } = await runResponseCase({
++        url: "https://api.trakt.tv/users/me/watchlist",
++        body: JSON.stringify([
++            { type: "movie", movie: createMovie() },
++            { type: "movie", movie: createTaiwanMovie() },
++        ]),
++        argument: { ...POSTER_ON, posterImageMode: "chinese" },
++        httpGetMocks: { ...createChinesePosterMock(), ...createTaiwanPosterMock() },
++    });
++
++    const payload = JSON.parse(result.body);
++    assert.equal(payload[0].movie.images.poster[0], TMDB_CN_POSTER);
++    assert.equal(payload[1].movie.images.poster[0], TMDB_TW_POSTER);
++});
++
++test("中文原海报关闭 +「海报语言=中文」：台湾电影和原插件一样优先大陆版海报", async () => {
++    const { result } = await runResponseCase({
++        url: "https://api.trakt.tv/movies/789",
++        body: JSON.stringify(createTaiwanMovie()),
++        argument: { ...ON, posterImageMode: "chinese" },
++        httpGetMocks: createTaiwanPosterMock(),
++    });
++
++    assert.equal(JSON.parse(result.body).images.poster[0], "https://image.tmdb.org/t/p/w780/cn-poster.jpg");
 +});
 diff --git a/trakt_simplified_chinese/src/features/comments-translation.mjs b/trakt_simplified_chinese/src/features/comments-translation.mjs
 index edca257..1296ca1 100644
@@ -463,7 +573,7 @@ index edca257..1296ca1 100644
      return {
          type: "respond",
 diff --git a/trakt_simplified_chinese/src/features/media-translation.mjs b/trakt_simplified_chinese/src/features/media-translation.mjs
-index 5ea35de..b760c9f 100644
+index 5ea35de..88f11ff 100644
 --- a/trakt_simplified_chinese/src/features/media-translation.mjs
 +++ b/trakt_simplified_chinese/src/features/media-translation.mjs
 @@ -2,6 +2,7 @@ import * as mediaTypes from "../shared/media-types.mjs";
@@ -474,11 +584,11 @@ index 5ea35de..b760c9f 100644
  import * as cacheUtils from "../utils/cache.mjs";
  import * as commonUtils from "../utils/common.mjs";
  import * as googleFallbackTranslation from "./google-fallback-translation.mjs";
-@@ -91,6 +92,28 @@ async function handleMediaDetail() {
+@@ -91,6 +92,32 @@ async function handleMediaDetail() {
          cacheUtils.saveLinkIdsCache(context.env, linkCache);
      }
  
-+    // 只翻译中文影视：剧集/电影看自身语言，季和单集看所属剧集；非中文不动文字，只按「海报语言」替换海报
++    // 只翻译中文影视：剧集/电影看自身语言，季和单集看所属剧集；非中文不动文字，只替换海报
 +    const isShowOrMovie = mediaType === mediaTypes.MEDIA_TYPE.SHOW || mediaType === mediaTypes.MEDIA_TYPE.MOVIE;
 +    if (isShowOrMovie) {
 +        translationScope.rememberMediaLanguage(mediaType, data);
@@ -486,6 +596,10 @@ index 5ea35de..b760c9f 100644
 +    const inScope = isShowOrMovie
 +        ? await translationScope.isMediaInScope(mediaType, ref.traktId, data?.language)
 +        : await translationScope.isMediaInScope(mediaTypes.MEDIA_TYPE.SHOW, ref.showId);
++    // 中文影视用中文原海报：中文影视按原片语言取海报，其他按「海报语言」
++    const posterImageMode =
++        (isShowOrMovie ? translationScope.getChinesePosterMode(mediaType, data) : translationScope.getChinesePosterMode(mediaTypes.MEDIA_TYPE.SHOW, ref.showId)) ??
++        context.argument.posterImageMode;
 +    if (!inScope) {
 +        if (!traktTranslationHelper.shouldReplaceImages()) {
 +            return { type: "passThrough" };
@@ -493,7 +607,7 @@ index 5ea35de..b760c9f 100644
 +        const imagesChanged = await traktTranslationHelper.replaceImagesInPlace(data, mediaType, {
 +            ...ref,
 +            tmdbId: data?.ids?.tmdb ?? null,
-+            imageMode: context.argument.posterImageMode,
++            imageMode: posterImageMode,
 +            language: data?.language ?? null,
 +            country: data?.country ?? null,
 +        });
@@ -503,7 +617,16 @@ index 5ea35de..b760c9f 100644
      const cache = cacheUtils.loadCache(context.env);
      const backendState = traktTranslationHelper.createBackendState(traktTranslationHelper.MEDIA_CONFIG);
      let cacheChanged = false;
-@@ -149,6 +172,17 @@ async function handleTranslations() {
+@@ -129,7 +156,7 @@ async function handleMediaDetail() {
+         await traktTranslationHelper.replaceImagesInPlace(data, mediaType, {
+             ...ref,
+             tmdbId: data?.ids?.tmdb ?? null,
+-            imageMode: context.argument.posterImageMode,
++            imageMode: posterImageMode,
+             language: data?.language ?? null,
+             country: data?.country ?? null,
+         });
+@@ -149,6 +176,17 @@ async function handleTranslations() {
      const target = traktTranslationHelper.resolveTranslationRequestTarget(context.url);
      const merged = translationCache.normalizeTranslations(translationCache.sortTranslations(arr, traktTranslationHelper.PREFERRED_TRANSLATION_LANGUAGE));
  
@@ -521,11 +644,42 @@ index 5ea35de..b760c9f 100644
      if (!traktTranslationHelper.isScriptInitiatedTranslationRequest() && target && traktTranslationHelper.buildMediaCacheLookupKey(target.mediaType, target)) {
          const normalized = translationCache.extractNormalizedTranslation(merged);
          const cache = cacheUtils.loadCache(context.env);
-@@ -232,6 +266,14 @@ async function handleSeasonEpisodesList() {
+@@ -192,15 +230,21 @@ async function handleSeasonEpisodesList() {
+     if (traktLinkIds.cacheEpisodeIdsFromSeasonList(linkCache, target.showId, seasons)) {
+         cacheUtils.saveLinkIdsCache(context.env, linkCache);
+     }
++    // 中文影视用中文原海报：中文剧集的季海报按原片语言取，其他按「海报语言」
++    const seasonPosterMode =
++        (await translationScope.resolveChinesePosterMode(mediaTypes.MEDIA_TYPE.SHOW, target.showId, traktLinkIds.getLinkIdsCacheEntry(linkCache, target.showId)?.language)) ??
++        context.argument.posterImageMode;
+     const shouldReplaceSeasonImages =
+-        traktTranslationHelper.shouldReplaceImages() && seasons.some((season) => commonUtils.isArray(season?.images?.poster) && season.images.poster.length > 0);
++        traktTranslationHelper.shouldReplaceImages() &&
++        (seasonPosterMode === "chinese" || seasonPosterMode === "original") &&
++        seasons.some((season) => commonUtils.isArray(season?.images?.poster) && season.images.poster.length > 0);
+     const cachedShowEntry = shouldReplaceSeasonImages ? traktLinkIds.getLinkIdsCacheEntry(linkCache, target.showId) : null;
+     let showTmdbId = cachedShowEntry?.ids?.tmdb ?? null;
+     let showLanguage = cachedShowEntry?.language ?? null;
+     let showCountry = cachedShowEntry?.country ?? null;
+     const shouldFetchShowDetailForSeasonImages =
+         shouldReplaceSeasonImages &&
+-        (commonUtils.isNullish(showTmdbId) || (context.argument.posterImageMode === "original" && (commonUtils.isNullish(showLanguage) || commonUtils.isNullish(showCountry))));
++        (commonUtils.isNullish(showTmdbId) || (seasonPosterMode === "original" && (commonUtils.isNullish(showLanguage) || commonUtils.isNullish(showCountry))));
+     if (shouldFetchShowDetailForSeasonImages) {
+         try {
+             const showEntry = commonUtils.isNullish(showTmdbId)
+@@ -226,12 +270,20 @@ async function handleSeasonEpisodesList() {
+     }
+ 
+     const seasonImagePromise = shouldReplaceSeasonImages
+-        ? traktTranslationHelper.replaceSeasonImagesInPlace(seasons, target.showId, showTmdbId, showLanguage, showCountry).catch((error) => {
++        ? traktTranslationHelper.replaceSeasonImagesInPlace(seasons, target.showId, showTmdbId, showLanguage, showCountry, seasonPosterMode).catch((error) => {
+               context.env.log(`Trakt season image replacement failed for show=${target.showId}: ${error}`);
+               return false;
            })
          : Promise.resolve(false);
  
-+    // 只翻译中文影视：非中文剧集的季列表不动文字，只按「海报语言」替换季海报
++    // 只翻译中文影视：非中文剧集的季列表不动文字，只替换季海报
 +    //（上面的集 ID 缓存仍保留，播放器跳转按钮要用）
 +    if (!(await translationScope.isMediaInScope(mediaTypes.MEDIA_TYPE.SHOW, target.showId))) {
 +        const seasonImagesChanged = await seasonImagePromise;
@@ -537,10 +691,19 @@ index 5ea35de..b760c9f 100644
      const targetSeason = seasons.find((item) => {
          return commonUtils.ensureArray(item?.episodes).some((episode) => Number(episode?.season) === currentSeasonNumber);
 diff --git a/trakt_simplified_chinese/src/module-manifest.mjs b/trakt_simplified_chinese/src/module-manifest.mjs
-index 8596f3b..9e3437c 100644
+index 8596f3b..1b25717 100644
 --- a/trakt_simplified_chinese/src/module-manifest.mjs
 +++ b/trakt_simplified_chinese/src/module-manifest.mjs
-@@ -113,6 +113,20 @@ const argumentFields = [
+@@ -36,7 +36,7 @@ const argumentFields = [
+         options: ["原片语言", "中文", "原图"],
+         optionValues: ["original", "chinese", "default"],
+         tag: "海报语言",
+-        desc: "原片语言使用 TMDb 影片原始语言图片；中文使用 TMDb 中文图片；原图保留 Trakt 原图",
++        desc: "开启「中文影视用中文原海报」时只对其他语言的影视生效。原片语言使用 TMDb 影片原始语言图片；中文使用 TMDb 中文图片；原图保留 Trakt 原图",
+     },
+     {
+         key: "historyEpisodesMergedByShow",
+@@ -113,6 +113,27 @@ const argumentFields = [
          tag: "调试模式",
          desc: "禁用本地缓存：不读写持久化存储；禁用远端缓存：不请求后端缓存接口；禁用所有缓存：两者皆禁用",
      },
@@ -549,7 +712,7 @@ index 8596f3b..9e3437c 100644
 +        defaultValue: true,
 +        type: "boolean",
 +        tag: "只翻译中文影视",
-+        desc: "开启后只翻译原始语言为中文的剧集和电影；其他语言的标题、简介、集数、评论、演职员等保留 Trakt 原文。海报由「海报语言」控制",
++        desc: "开启后只翻译原始语言为中文的剧集和电影；其他语言的标题、简介、集数、评论、演职员等保留 Trakt 原文。海报见「中文影视用中文原海报」和「海报语言」",
 +    },
 +    {
 +        key: "peopleTranslationEnabled",
@@ -557,6 +720,13 @@ index 8596f3b..9e3437c 100644
 +        type: "boolean",
 +        tag: "人物页翻译",
 +        desc: "开启「只翻译中文影视」时，人物页和人物搜索是否翻译演员名和简介；影视页里的演职员表仍按该影视的语言决定",
++    },
++    {
++        key: "chinesePosterEnabled",
++        defaultValue: true,
++        type: "boolean",
++        tag: "中文影视用中文原海报",
++        desc: "开启后原始语言为中文的剧集和电影固定使用 TMDb 中文海报（优先原产地区版本，如台剧用台版、港片用港版），不受「海报语言」影响；TMDb 没有中文海报时保留 Trakt 原图",
 +    },
  ];
  
@@ -586,8 +756,100 @@ index 19f6c85..f320225 100644
      return dispatchRoutes(createResponsePhaseRoutes);
  }
  
+diff --git a/trakt_simplified_chinese/src/shared/media-image-replacement.mjs b/trakt_simplified_chinese/src/shared/media-image-replacement.mjs
+index ed46556..16e0b40 100644
+--- a/trakt_simplified_chinese/src/shared/media-image-replacement.mjs
++++ b/trakt_simplified_chinese/src/shared/media-image-replacement.mjs
+@@ -63,8 +63,17 @@ function isPosterImageReplacementUserAgent(userAgent = globalThis.$ctx?.userAgen
+     return /^Trakt/i.test(String(userAgent ?? "").trim());
+ }
+ 
++// 「中文影视用中文原海报」：开启后中文影视按“原片语言”取海报，其他影视仍按「海报语言」（条目的 ref.imageMode 决定）
++function isChinesePosterEnabled() {
++    return globalThis.$ctx?.argument?.chinesePosterEnabled === true;
++}
++
+ function shouldReplaceImages() {
+-    return getPosterImageMode() !== POSTER_IMAGE_MODE.DEFAULT && isPosterImageReplacementUserAgent();
++    return (getPosterImageMode() !== POSTER_IMAGE_MODE.DEFAULT || isChinesePosterEnabled()) && isPosterImageReplacementUserAgent();
++}
++
++function isReplaceablePosterMode(mode) {
++    return mode === POSTER_IMAGE_MODE.CHINESE || mode === POSTER_IMAGE_MODE.ORIGINAL;
+ }
+ 
+ function getImageFetchModes() {
+@@ -492,7 +501,11 @@ function getMissingImageFields(cache, mediaType, ref, fields) {
+ }
+ 
+ function getCurrentModeMissingImageFields(cache, mediaType, ref, fields) {
+-    return getMissingImageFields(cache, mediaType, { ...ref, imageMode: getPosterImageMode() }, fields);
++    const mode = ref?.imageMode ?? getPosterImageMode();
++    if (!isReplaceablePosterMode(mode)) {
++        return [];
++    }
++    return getMissingImageFields(cache, mediaType, { ...ref, imageMode: mode }, fields);
+ }
+ 
+ function hasCurrentModeMissingImages(cache, targets) {
+@@ -500,7 +513,11 @@ function hasCurrentModeMissingImages(cache, targets) {
+ }
+ 
+ async function shouldSkipCurrentOriginalImages(mediaType, ref) {
+-    if (getPosterImageMode() !== POSTER_IMAGE_MODE.ORIGINAL) {
++    const mode = ref?.imageMode ?? getPosterImageMode();
++    if (!isReplaceablePosterMode(mode)) {
++        return true;
++    }
++    if (mode !== POSTER_IMAGE_MODE.ORIGINAL) {
+         return false;
+     }
+     const preference = await resolveImagePreference(mediaType, { ...ref, imageMode: POSTER_IMAGE_MODE.ORIGINAL });
+@@ -648,7 +665,7 @@ async function fetchAndPersistMissingImages(cache, targets, backendState = creat
+         }
+         try {
+             const entries = await fetchImageEntries(mediaType, ref, fields);
+-            const currentMode = getPosterImageMode();
++            const currentMode = ref?.imageMode ?? getPosterImageMode();
+             for (const { ref: modeRef, entry } of entries) {
+                 if ((modeRef?.imageMode ?? currentMode) === currentMode) {
+                     storeImageCacheEntry(cache, mediaType, modeRef, entry);
+@@ -670,8 +687,13 @@ async function hydrateAndFetchImages(cache, targets, backendState) {
+         return false;
+     }
+     try {
+-        const currentMode = getPosterImageMode();
+-        cacheChanged = (await hydrateImagesFromBackend(cache, targets, currentMode)) || cacheChanged;
++        // 条目可能分属不同海报模式（中文影视 original，其他按「海报语言」），按模式分别读后端缓存
++        for (const mode of [POSTER_IMAGE_MODE.CHINESE, POSTER_IMAGE_MODE.ORIGINAL]) {
++            const modeTargets = targets.filter(({ ref }) => (ref?.imageMode ?? getPosterImageMode()) === mode);
++            if (modeTargets.length > 0) {
++                cacheChanged = (await hydrateImagesFromBackend(cache, modeTargets, mode)) || cacheChanged;
++            }
++        }
+         if (!hasCurrentModeMissingImages(cache, targets)) {
+             return cacheChanged;
+         }
+@@ -712,7 +734,7 @@ function buildSeasonPosterRef(showId, showTmdbId, season) {
+     };
+ }
+ 
+-async function replaceSeasonImagesInPlace(seasons, showId, showTmdbId, showLanguage = null, showCountry = null) {
++async function replaceSeasonImagesInPlace(seasons, showId, showTmdbId, showLanguage = null, showCountry = null, imageMode = null) {
+     if (commonUtils.isNotArray(seasons) || commonUtils.isNullish(showId) || commonUtils.isNullish(showTmdbId)) {
+         return false;
+     }
+@@ -725,7 +747,7 @@ async function replaceSeasonImagesInPlace(seasons, showId, showTmdbId, showLangu
+             mediaType: "season",
+             ref: {
+                 ...buildSeasonPosterRef(showId, showTmdbId, season),
+-                imageMode: getPosterImageMode(),
++                imageMode: imageMode ?? getPosterImageMode(),
+                 language: showLanguage,
+                 country: showCountry,
+             },
 diff --git a/trakt_simplified_chinese/src/shared/trakt-translation-helper.mjs b/trakt_simplified_chinese/src/shared/trakt-translation-helper.mjs
-index f11e435..3d7a795 100644
+index f11e435..daf0d29 100644
 --- a/trakt_simplified_chinese/src/shared/trakt-translation-helper.mjs
 +++ b/trakt_simplified_chinese/src/shared/trakt-translation-helper.mjs
 @@ -48,6 +48,7 @@ import {
@@ -598,6 +860,15 @@ index f11e435..3d7a795 100644
  
  const DIRECT_MEDIA_TYPE_SHOW_STATUSES = ["returning series", "ended", "canceled"];
  
+@@ -246,7 +247,7 @@ function buildMediaRef(item, mediaType) {
+         traktId,
+         backendLookupKey: String(traktId),
+         tmdbId: target?.ids?.tmdb ?? null,
+-        imageMode: getPosterImageMode(),
++        imageMode: translationScope.getChinesePosterMode(mediaType, target) ?? getPosterImageMode(),
+         language: target?.language ?? null,
+         country: target?.country ?? null,
+         availableTranslations: commonUtils.isArray(target.available_translations) ? target.available_translations : null,
 @@ -378,11 +379,13 @@ function unwrapDirectMediaItems(arr, mediaConfig) {
      });
  }
@@ -610,7 +881,7 @@ index f11e435..3d7a795 100644
 +    if (commonUtils.isNotArray(allItems) || allItems.length === 0) {
 +        return allItems;
      }
-+    // 只翻译中文影视：文字只处理中文条目；海报对所有条目按「海报语言」处理（与原插件一致）
++    // 只翻译中文影视：文字只处理中文条目；海报对所有条目处理（中文影视可固定用中文原海报，其他按「海报语言」）
 +    const items = await translationScope.filterItemsInScope(allItems);
  
      const context = globalThis.$ctx;
@@ -638,12 +909,12 @@ index f11e435..3d7a795 100644
  async function translateWrapperItems(bodyOverride) {
 diff --git a/trakt_simplified_chinese/src/shared/translation-scope.mjs b/trakt_simplified_chinese/src/shared/translation-scope.mjs
 new file mode 100644
-index 0000000..c8b2d32
+index 0000000..f53d647
 --- /dev/null
 +++ b/trakt_simplified_chinese/src/shared/translation-scope.mjs
-@@ -0,0 +1,314 @@
+@@ -0,0 +1,366 @@
 +// 只翻译中文影视：原始语言为中文的剧集/电影照常翻译；其他语言的文字内容保留 Trakt 原文，不做翻译。
-+// 海报不受这里控制，所有影视都按「海报语言」处理（与原插件一致）。
++// 海报：「中文影视用中文原海报」开启时中文影视按原片语言取海报，其他影视按「海报语言」（见 getChinesePosterMode）。
 +//
 +// - 列表：逐条判断，只有中文条目的文字会被翻译。
 +// - 绑定到单个影视的页面：详情、季列表只替换海报不动文字；预告片、评论、口碑摘要、演职员表对非中文影视原样放行。
@@ -666,6 +937,15 @@ index 0000000..c8b2d32
 +
 +function isChineseOnlyEnabled() {
 +    return globalThis.$ctx?.argument?.chineseOnlyTranslation !== false;
++}
++
++function isChinesePosterEnabled() {
++    return globalThis.$ctx?.argument?.chinesePosterEnabled === true;
++}
++
++// 「中文影视用中文原海报」需要事先知道语言：「海报语言」本身是原片语言时结果相同，不必额外查询
++function needsLanguageForPoster() {
++    return isChinesePosterEnabled() && globalThis.$ctx?.argument?.posterImageMode !== "original";
 +}
 +
 +function normalizeLanguage(value) {
@@ -819,7 +1099,7 @@ index 0000000..c8b2d32
 +
 +// 返回需要翻译文字的条目（中文或语言未知）；其他条目的文字调用方不应触碰
 +async function filterItemsInScope(items) {
-+    if (!isChineseOnlyEnabled() || commonUtils.isNotArray(items)) {
++    if (commonUtils.isNotArray(items) || (!isChineseOnlyEnabled() && !needsLanguageForPoster())) {
 +        return items;
 +    }
 +
@@ -846,10 +1126,42 @@ index 0000000..c8b2d32
 +    );
 +    flushLanguageStore();
 +
++    if (!isChineseOnlyEnabled()) {
++        return items;
++    }
 +    return items.filter((item, index) => {
 +        const source = sources[index];
 +        return !source || isChineseLanguage(getSourceLanguage(source)) !== false;
 +    });
++}
++
++// ---------- 海报 ----------
++
++// 「中文影视用中文原海报」：中文影视返回 "original"（原片语言 = 中文，优先原产地区版本）；否则 null，由调用方用「海报语言」
++// 只读已知语言（响应自带或本地记录），不发请求；语言未知时按「海报语言」处理
++function getChinesePosterMode(mediaType, media, knownLanguage = null) {
++    if (!isChinesePosterEnabled()) {
++        return null;
++    }
++    const ids = commonUtils.isPlainObject(media) ? media.ids : null;
++    const language =
++        normalizeLanguage(knownLanguage) ||
++        normalizeLanguage(commonUtils.isPlainObject(media) ? media.language : null) ||
++        recallMediaLanguage(mediaType, ids ? ids.trakt : media) ||
++        (ids ? recallMediaLanguage(mediaType, ids.slug) : "");
++    return isChineseLanguage(language) === true ? "original" : null;
++}
++
++// 季列表等只有剧集 ID 的场景：本地没有语言记录时补查一次（仅在需要时）
++async function resolveChinesePosterMode(mediaType, idOrSlug, knownLanguage = null) {
++    if (!isChinesePosterEnabled()) {
++        return null;
++    }
++    const language = needsLanguageForPoster()
++        ? await resolveMediaLanguage(mediaType, idOrSlug, knownLanguage)
++        : normalizeLanguage(knownLanguage) || recallMediaLanguage(mediaType, idOrSlug);
++    flushLanguageStore();
++    return isChineseLanguage(language) === true ? "original" : null;
 +}
 +
 +// ---------- 评论 ----------
@@ -955,7 +1267,18 @@ index 0000000..c8b2d32
 +    return inScope;
 +}
 +
-+export { filterItemsInScope, filterRecentCommentItems, isChineseLanguage, isChineseOnlyEnabled, isMediaInScope, rememberMediaLanguage, shouldBypassResponse };
++export {
++    filterItemsInScope,
++    filterRecentCommentItems,
++    getChinesePosterMode,
++    isChineseLanguage,
++    isChineseOnlyEnabled,
++    isChinesePosterEnabled,
++    isMediaInScope,
++    rememberMediaLanguage,
++    resolveChinesePosterMode,
++    shouldBypassResponse,
++};
 -- 
 2.43.0
 
