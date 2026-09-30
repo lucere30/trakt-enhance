@@ -2,8 +2,8 @@ name: 跟随上游同步
 
 on:
   schedule:
-    # 每 6 小时检查一次上游（UTC 时间；GitHub 高峰期可能延迟）
-    - cron: "23 */6 * * *"
+    # 每 12 小时检查一次上游：UTC 00:23 和 12:23（北京时间 08:23 和 20:23）；GitHub 高峰期可能延迟
+    - cron: "23 */12 * * *"
   workflow_dispatch:
 
 permissions:

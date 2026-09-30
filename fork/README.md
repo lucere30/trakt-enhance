@@ -21,7 +21,7 @@
 
 ## 自动同步
 
-`.github/workflows/sync-upstream.yml` 每 6 小时运行一次（也可在 Actions 页面手动运行），执行 `fork/sync.sh`：
+`.github/workflows/sync-upstream.yml` 每 12 小时运行一次（也可在 Actions 页面手动运行），执行 `fork/sync.sh`：
 
 1. 拉取上游 `main` 的完整代码；
 2. 按顺序重放 `fork/patches/*.patch`（3-way 合并）；
