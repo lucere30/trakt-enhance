@@ -1,6 +1,6 @@
-From a4e03dec3e7204b7a47861162ccf4f2f1f065b09 Mon Sep 17 00:00:00 2001
+From da31dbccd46bee99bbbf5a550550ed818410eb1d Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
-Date: Wed, 30 Sep 2026 18:49:31 +0000
+Date: Wed, 30 Sep 2026 19:00:55 +0000
 Subject: [PATCH] =?UTF-8?q?feat(trakt):=20=E5=8F=AA=E7=BF=BB=E8=AF=91?=
  =?UTF-8?q?=E4=B8=AD=E6=96=87=E5=BD=B1=E8=A7=86=E3=80=81=E4=B8=AD=E6=96=87?=
  =?UTF-8?q?=E5=BD=B1=E8=A7=86=E7=94=A8=E4=B8=AD=E6=96=87=E5=8E=9F=E6=B5=B7?=
@@ -14,21 +14,22 @@ Content-Transfer-Encoding: 8bit
 新增开关「中文影视用中文原海报」（默认开启）：中文影视固定按原片语言取
 TMDb 中文海报（优先原产地区版本），其他影视按「海报语言」。
 另加「人物页翻译」开关。评论记录与语言记录分开存放；粤语片（cn）同时接受
-zh 海报。
+zh 海报。脚本自己发起的详情请求带标记请求头，响应阶段原样放行。
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01YH4kK6jKSf8gmN4WbmGa5W
 ---
  tests/helpers/trakt-test-helpers.mjs          |   5 +
- tests/trakt_translation_scope.test.mjs        | 526 ++++++++++++++++++
+ tests/trakt_translation_scope.test.mjs        | 557 ++++++++++++++++++
  .../src/features/comments-translation.mjs     |   9 +-
  .../src/features/media-translation.mjs        |  60 +-
  .../src/module-manifest.mjs                   |  23 +-
- trakt_simplified_chinese/src/response.mjs     |   7 +-
+ .../src/outbound/trakt-api-client.mjs         |  19 +-
+ trakt_simplified_chinese/src/response.mjs     |  12 +-
  .../src/shared/media-image-replacement.mjs    |  49 +-
  .../src/shared/trakt-translation-helper.mjs   |  17 +-
  .../src/shared/translation-scope.mjs          | 395 +++++++++++++
- 9 files changed, 1064 insertions(+), 27 deletions(-)
+ 10 files changed, 1116 insertions(+), 30 deletions(-)
  create mode 100644 tests/trakt_translation_scope.test.mjs
  create mode 100644 trakt_simplified_chinese/src/shared/translation-scope.mjs
 
@@ -64,10 +65,10 @@ index 258c774..37badb7 100644
      });
 diff --git a/tests/trakt_translation_scope.test.mjs b/tests/trakt_translation_scope.test.mjs
 new file mode 100644
-index 0000000..1739f1c
+index 0000000..ced2a6c
 --- /dev/null
 +++ b/tests/trakt_translation_scope.test.mjs
-@@ -0,0 +1,526 @@
+@@ -0,0 +1,557 @@
 +import assert from "node:assert/strict";
 +import test from "node:test";
 +
@@ -594,6 +595,37 @@ index 0000000..1739f1c
 +    );
 +    assert.equal(JSON.parse(result.body).images.poster[0], "https://image.tmdb.org/t/p/w780/hk-poster.jpg");
 +});
++
++// ---------- 脚本自己发起的详情请求 ----------
++
++test("带脚本详情请求头的详情响应原样放行，不翻译、不换海报、不发请求", async () => {
++    const { result, httpLogs } = await runResponseCase({
++        url: "https://api.trakt.tv/movies/789?extended=cloud9,full,watchnow",
++        body: JSON.stringify(createTaiwanMovie()),
++        headers: { "x-script-trakt-detail-request": "true" },
++        argument: { ...POSTER_ON, posterImageMode: "chinese" },
++        httpGetMocks: createTaiwanPosterMock(),
++        persistentData: createPersistentData({ "movie:789": createMediaTranslationEntry({ translation: { title: "台湾电影" } }) }),
++    });
++
++    assert.equal(result.body, undefined);
++    assert.equal(httpLogs.length, 0);
++});
++
++test("列表补查语言时发出的详情请求带脚本请求头", async () => {
++    const { httpLogs } = await runResponseCase({
++        url: "https://api.trakt.tv/users/me/watchlist",
++        body: JSON.stringify([{ type: "show", show: { title: "Unknown Show", ids: { trakt: 555 } } }]),
++        argument: ON,
++        httpGetMocks: {
++            "https://api.trakt.tv/shows/555?extended=cloud9,full,watchnow": { status: 200, body: JSON.stringify({ title: "Unknown Show", language: "ja", ids: { trakt: 555 } }) },
++        },
++    });
++
++    const detailRequest = httpLogs.find((log) => log.url.startsWith("https://api.trakt.tv/shows/555?"));
++    assert.ok(detailRequest);
++    assert.equal(detailRequest.headers["x-script-trakt-detail-request"], "true");
++});
 diff --git a/trakt_simplified_chinese/src/features/comments-translation.mjs b/trakt_simplified_chinese/src/features/comments-translation.mjs
 index edca257..1296ca1 100644
 --- a/trakt_simplified_chinese/src/features/comments-translation.mjs
@@ -780,25 +812,71 @@ index 8596f3b..1b25717 100644
  ];
  
  const ALL_ARGUMENT_KEYS = argumentFields.map((field) => field.key);
+diff --git a/trakt_simplified_chinese/src/outbound/trakt-api-client.mjs b/trakt_simplified_chinese/src/outbound/trakt-api-client.mjs
+index 37202d8..766d43f 100644
+--- a/trakt_simplified_chinese/src/outbound/trakt-api-client.mjs
++++ b/trakt_simplified_chinese/src/outbound/trakt-api-client.mjs
+@@ -2,6 +2,19 @@ import * as mediaTypes from "../shared/media-types.mjs";
+ import * as commonUtils from "../utils/common.mjs";
+ import * as httpUtils from "../utils/http.mjs";
+ 
++// 脚本自己发起的详情请求带上这个请求头。若代理工具把脚本的请求也交给本脚本处理，
++// 响应阶段看到它就原样放行：调用方只需要语言、ID、原标题，不需要再翻译、换海报，也避免多余请求。
++const SCRIPT_DETAIL_REQUEST_HEADER = "x-script-trakt-detail-request";
++const SCRIPT_DETAIL_REQUEST_VALUE = "true";
++
++function isScriptInitiatedDetailRequest() {
++    return String(httpUtils.getRequestHeaderValue(SCRIPT_DETAIL_REQUEST_HEADER) ?? "").toLowerCase() === SCRIPT_DETAIL_REQUEST_VALUE;
++}
++
++function fetchScriptDetailJson(url) {
++    return httpUtils.fetchJson(url, { [SCRIPT_DETAIL_REQUEST_HEADER]: SCRIPT_DETAIL_REQUEST_VALUE });
++}
++
+ function resolveTraktApiBaseUrl() {
+     const origin = String(globalThis.$ctx.url?.origin ?? "");
+     return /^https:\/\/apiz?\.trakt\.tv$/i.test(origin) ? origin : "";
+@@ -127,12 +140,12 @@ async function fetchTranslationPayload(mediaType, ref, extraHeaders) {
+ 
+ function fetchMediaDetail(mediaType, traktId) {
+     const url = buildMediaDetailUrl(mediaType, traktId);
+-    return url ? httpUtils.fetchJson(url) : Promise.resolve(null);
++    return url ? fetchScriptDetailJson(url) : Promise.resolve(null);
+ }
+ 
+ function fetchEpisodeDetail(ref) {
+     const url = buildEpisodeDetailUrl(ref);
+-    return url ? httpUtils.fetchJson(url) : Promise.resolve(null);
++    return url ? fetchScriptDetailJson(url) : Promise.resolve(null);
+ }
+ 
+-export { fetchBulkTranslations, fetchEpisodeDetail, fetchMediaDetail, fetchTranslationPayload };
++export { fetchBulkTranslations, fetchEpisodeDetail, fetchMediaDetail, fetchTranslationPayload, isScriptInitiatedDetailRequest, SCRIPT_DETAIL_REQUEST_HEADER };
 diff --git a/trakt_simplified_chinese/src/response.mjs b/trakt_simplified_chinese/src/response.mjs
-index 19f6c85..f320225 100644
+index 19f6c85..9974784 100644
 --- a/trakt_simplified_chinese/src/response.mjs
 +++ b/trakt_simplified_chinese/src/response.mjs
-@@ -8,6 +8,7 @@ import * as playerInjectionSofaTimeHandler from "./features/player-injection-sof
+@@ -7,7 +7,9 @@ import * as peopleTranslationHandler from "./features/people-translation.mjs";
+ import * as playerInjectionSofaTimeHandler from "./features/player-injection-sofatime.mjs";
  import * as playerInjectionTraktHandler from "./features/player-injection-trakt.mjs";
  import * as sentimentsTranslationHandler from "./features/sentiments-translation.mjs";
++import * as traktApiClient from "./outbound/trakt-api-client.mjs";
  import { createRoute, dispatchRoutes } from "./shared/route.mjs";
 +import * as translationScope from "./shared/translation-scope.mjs";
  
  function createResponsePhaseRoutes() {
      return [
-@@ -202,7 +203,11 @@ function createResponsePhaseRoutes() {
+@@ -202,7 +204,15 @@ function createResponsePhaseRoutes() {
      ];
  }
  
 -function handleResponse() {
 +async function handleResponse() {
-+    // 仅处理中文原片：非中文内容原样放行
++    // 脚本自己发起的详情请求：原样放行，不再翻译、换海报
++    if (traktApiClient.isScriptInitiatedDetailRequest()) {
++        return { type: "passThrough" };
++    }
++    // 只翻译中文影视：非中文内容原样放行
 +    if (await translationScope.shouldBypassResponse(globalThis.$ctx)) {
 +        return { type: "passThrough" };
 +    }
