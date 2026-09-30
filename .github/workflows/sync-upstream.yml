@@ -1,0 +1,61 @@
+name: 跟随上游同步
+
+on:
+  schedule:
+    # 每 6 小时检查一次上游（UTC 时间；GitHub 高峰期可能延迟）
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: 配置提交身份
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: 同步上游并重放定制
+        id: sync
+        env:
+          SYNC_REPORT: ${{ runner.temp }}/fork-sync-report.md
+        run: bash fork/sync.sh
+
+      - name: 推送
+        if: steps.sync.outputs.changed == 'true'
+        run: git push origin HEAD:${{ github.ref_name }}
+
+      - name: 失败时开 issue 提醒
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPORT: ${{ runner.temp }}/fork-sync-report.md
+          UP_SHA: ${{ steps.sync.outputs.upstream_sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TITLE="上游同步失败，需要处理"
+          { [ -s "$REPORT" ] && cat "$REPORT" || echo "同步失败，详见运行日志。"; echo; echo "运行日志：$RUN_URL"; } > body.md
+          NUM="$(gh issue list --state open --search "\"$TITLE\" in:title" --json number -q '.[0].number')"
+          if [ -z "$NUM" ]; then
+            gh issue create --title "$TITLE" --body-file body.md
+          elif [ -n "$UP_SHA" ] && gh issue view "$NUM" --json body,comments -q '.body, .comments[].body' | grep -q "$UP_SHA"; then
+            echo "该上游提交已报告过，不重复提醒。"
+          else
+            gh issue comment "$NUM" --body-file body.md
+          fi
