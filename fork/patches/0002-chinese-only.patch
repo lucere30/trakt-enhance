@@ -1,6 +1,6 @@
-From 62d9319bff9963342bbe24c79c83805f6ffd8438 Mon Sep 17 00:00:00 2001
+From a4e03dec3e7204b7a47861162ccf4f2f1f065b09 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
-Date: Wed, 30 Sep 2026 18:27:45 +0000
+Date: Wed, 30 Sep 2026 18:49:31 +0000
 Subject: [PATCH] =?UTF-8?q?feat(trakt):=20=E5=8F=AA=E7=BF=BB=E8=AF=91?=
  =?UTF-8?q?=E4=B8=AD=E6=96=87=E5=BD=B1=E8=A7=86=E3=80=81=E4=B8=AD=E6=96=87?=
  =?UTF-8?q?=E5=BD=B1=E8=A7=86=E7=94=A8=E4=B8=AD=E6=96=87=E5=8E=9F=E6=B5=B7?=
@@ -13,21 +13,22 @@ Content-Transfer-Encoding: 8bit
 其他语言的标题、简介、集数、评论、演职员等保留 Trakt 原文。
 新增开关「中文影视用中文原海报」（默认开启）：中文影视固定按原片语言取
 TMDb 中文海报（优先原产地区版本），其他影视按「海报语言」。
-另加「人物页翻译」开关。
+另加「人物页翻译」开关。评论记录与语言记录分开存放；粤语片（cn）同时接受
+zh 海报。
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01YH4kK6jKSf8gmN4WbmGa5W
 ---
  tests/helpers/trakt-test-helpers.mjs          |   5 +
- tests/trakt_translation_scope.test.mjs        | 478 ++++++++++++++++++
+ tests/trakt_translation_scope.test.mjs        | 526 ++++++++++++++++++
  .../src/features/comments-translation.mjs     |   9 +-
- .../src/features/media-translation.mjs        |  60 ++-
+ .../src/features/media-translation.mjs        |  60 +-
  .../src/module-manifest.mjs                   |  23 +-
  trakt_simplified_chinese/src/response.mjs     |   7 +-
- .../src/shared/media-image-replacement.mjs    |  38 +-
+ .../src/shared/media-image-replacement.mjs    |  49 +-
  .../src/shared/trakt-translation-helper.mjs   |  17 +-
- .../src/shared/translation-scope.mjs          | 366 ++++++++++++++
- 9 files changed, 979 insertions(+), 24 deletions(-)
+ .../src/shared/translation-scope.mjs          | 395 +++++++++++++
+ 9 files changed, 1064 insertions(+), 27 deletions(-)
  create mode 100644 tests/trakt_translation_scope.test.mjs
  create mode 100644 trakt_simplified_chinese/src/shared/translation-scope.mjs
 
@@ -63,10 +64,10 @@ index 258c774..37badb7 100644
      });
 diff --git a/tests/trakt_translation_scope.test.mjs b/tests/trakt_translation_scope.test.mjs
 new file mode 100644
-index 0000000..9b5d84e
+index 0000000..1739f1c
 --- /dev/null
 +++ b/tests/trakt_translation_scope.test.mjs
-@@ -0,0 +1,478 @@
+@@ -0,0 +1,526 @@
 +import assert from "node:assert/strict";
 +import test from "node:test";
 +
@@ -99,6 +100,12 @@ index 0000000..9b5d84e
 +
 +function readLanguageStore(persistentData) {
 +    return JSON.parse(String(persistentData?.[LANGUAGE_STORE_KEY] ?? "{}"));
++}
++
++const COMMENT_STORE_KEY = "dj_trakt_fork_comment_scope";
++
++function readCommentStore(persistentData) {
++    return JSON.parse(String(persistentData?.[COMMENT_STORE_KEY] ?? "{}"));
 +}
 +
 +function hasTranslationRequest(httpLogs) {
@@ -306,7 +313,12 @@ index 0000000..9b5d84e
 +        persistentData: createPersistentData({}, languages),
 +    });
 +    assertPassThrough(first.result);
-+    assert.equal(readLanguageStore(first.persistentData)["comment:9001"], "-");
++    assert.equal(readCommentStore(first.persistentData)["9001"], "-");
++    // 评论记录和语言记录分开存放，不占语言记录的名额
++    assert.equal(
++        Object.keys(readLanguageStore(first.persistentData)).some((key) => key.startsWith("comment:")),
++        false,
++    );
 +
 +    const replies = await runResponseCase({
 +        url: "https://api.trakt.tv/comments/9001/replies",
@@ -370,7 +382,7 @@ index 0000000..9b5d84e
 +    const payload = JSON.parse(result.body);
 +    assert.deepEqual(payload[0], items[0]);
 +    assert.equal(payload[1].movie.title, "中文电影名");
-+    assert.equal(readLanguageStore(persistentData)["comment:7001"], "-");
++    assert.equal(readCommentStore(persistentData)["7001"], "-");
 +});
 +
 +// ---------- 海报：所有影视都按「海报语言」处理（与原插件一致） ----------
@@ -544,6 +556,43 @@ index 0000000..9b5d84e
 +    });
 +
 +    assert.equal(JSON.parse(result.body).images.poster[0], "https://image.tmdb.org/t/p/w780/cn-poster.jpg");
++});
++
++test("旧版本存在语言记录里的评论记录会被清掉", async () => {
++    const { persistentData } = await runResponseCase({
++        url: "https://api.trakt.tv/movies/123",
++        body: JSON.stringify(createMovie({ images: {} })),
++        argument: ON,
++        persistentData: createPersistentData({}, { "comment:1": "-", "comment:2": "-", "show:9": "ja" }),
++    });
++
++    const store = readLanguageStore(persistentData);
++    assert.equal(store["comment:1"], undefined);
++    assert.equal(store["comment:2"], undefined);
++    assert.equal(store["show:9"], "ja");
++    assert.equal(store["movie:123"], "en");
++});
++
++// ---------- 粤语片（TMDb 语言代码 cn） ----------
++
++test("粤语片（language=cn）开启中文原海报时也能用上标为 zh 的港版中文海报", async () => {
++    const { result, httpLogs } = await runResponseCase({
++        url: "https://api.trakt.tv/movies/789",
++        body: JSON.stringify(createMovie({ title: "HK Movie", ids: { trakt: 789, tmdb: 789 }, language: "cn", country: "hk", images: { poster: [TRAKT_POSTER_789] } })),
++        argument: { ...POSTER_ON, posterImageMode: "default" },
++        httpGetMocks: {
++            [`https://api.tmdb.org/3/movie/789/images?language=zh%2Ccn&api_key=${TEST_TMDB_API_KEY}`]: createTmdbImagesResponse([
++                { iso_639_1: "zh", iso_3166_1: "CN", file_path: "/cn-poster.jpg", vote_average: 9, vote_count: 50 },
++                { iso_639_1: "zh", iso_3166_1: "HK", file_path: "/hk-poster.jpg", vote_average: 5, vote_count: 5 },
++            ]),
++        },
++    });
++
++    assert.equal(
++        httpLogs.some((log) => log.url.includes("/movie/789/images?language=zh%2Ccn")),
++        true,
++    );
++    assert.equal(JSON.parse(result.body).images.poster[0], "https://image.tmdb.org/t/p/w780/hk-poster.jpg");
 +});
 diff --git a/trakt_simplified_chinese/src/features/comments-translation.mjs b/trakt_simplified_chinese/src/features/comments-translation.mjs
 index edca257..1296ca1 100644
@@ -757,7 +806,7 @@ index 19f6c85..f320225 100644
  }
  
 diff --git a/trakt_simplified_chinese/src/shared/media-image-replacement.mjs b/trakt_simplified_chinese/src/shared/media-image-replacement.mjs
-index ed46556..16e0b40 100644
+index ed46556..d94c6ef 100644
 --- a/trakt_simplified_chinese/src/shared/media-image-replacement.mjs
 +++ b/trakt_simplified_chinese/src/shared/media-image-replacement.mjs
 @@ -63,8 +63,17 @@ function isPosterImageReplacementUserAgent(userAgent = globalThis.$ctx?.userAgen
@@ -779,7 +828,36 @@ index ed46556..16e0b40 100644
  }
  
  function getImageFetchModes() {
-@@ -492,7 +501,11 @@ function getMissingImageFields(cache, mediaType, ref, fields) {
+@@ -181,11 +190,17 @@ function getFetchImageFields(target, mediaType, ref) {
+         : [];
+ }
+ 
++// TMDb 用 "cn" 表示粤语；粤语片的中文海报也可能标成 "zh"，所以原片语言为 "cn" 时同时接受 "zh" 海报（"cn" 优先）
++const IMAGE_LANGUAGE_FALLBACKS = { cn: ["zh"] };
++
+ function getImageLanguageScore(image, preference) {
+     const language = String(image?.iso_639_1 ?? "")
+         .trim()
+         .toLowerCase();
+-    return language === preference.language ? 1 : 0;
++    if (language === preference.language) {
++        return 1;
++    }
++    return (IMAGE_LANGUAGE_FALLBACKS[preference.language] ?? []).includes(language) ? 0.5 : 0;
+ }
+ 
+ function getImageRegionScore(image, preference) {
+@@ -431,8 +446,7 @@ async function fetchImageEntries(mediaType, ref, fields) {
+         payload = mergedImagesPayload;
+     } else {
+         const languages = preferences
+-            .map(({ preference }) => preference?.language)
+-            .filter(Boolean)
++            .flatMap(({ preference }) => (preference?.language ? [preference.language, ...(IMAGE_LANGUAGE_FALLBACKS[preference.language] ?? [])] : []))
+             .filter((language, index, array) => array.indexOf(language) === index);
+         payload =
+             languages.length === 0
+@@ -492,7 +506,11 @@ function getMissingImageFields(cache, mediaType, ref, fields) {
  }
  
  function getCurrentModeMissingImageFields(cache, mediaType, ref, fields) {
@@ -792,7 +870,7 @@ index ed46556..16e0b40 100644
  }
  
  function hasCurrentModeMissingImages(cache, targets) {
-@@ -500,7 +513,11 @@ function hasCurrentModeMissingImages(cache, targets) {
+@@ -500,7 +518,11 @@ function hasCurrentModeMissingImages(cache, targets) {
  }
  
  async function shouldSkipCurrentOriginalImages(mediaType, ref) {
@@ -805,7 +883,7 @@ index ed46556..16e0b40 100644
          return false;
      }
      const preference = await resolveImagePreference(mediaType, { ...ref, imageMode: POSTER_IMAGE_MODE.ORIGINAL });
-@@ -648,7 +665,7 @@ async function fetchAndPersistMissingImages(cache, targets, backendState = creat
+@@ -648,7 +670,7 @@ async function fetchAndPersistMissingImages(cache, targets, backendState = creat
          }
          try {
              const entries = await fetchImageEntries(mediaType, ref, fields);
@@ -814,7 +892,7 @@ index ed46556..16e0b40 100644
              for (const { ref: modeRef, entry } of entries) {
                  if ((modeRef?.imageMode ?? currentMode) === currentMode) {
                      storeImageCacheEntry(cache, mediaType, modeRef, entry);
-@@ -670,8 +687,13 @@ async function hydrateAndFetchImages(cache, targets, backendState) {
+@@ -670,8 +692,13 @@ async function hydrateAndFetchImages(cache, targets, backendState) {
          return false;
      }
      try {
@@ -830,7 +908,7 @@ index ed46556..16e0b40 100644
          if (!hasCurrentModeMissingImages(cache, targets)) {
              return cacheChanged;
          }
-@@ -712,7 +734,7 @@ function buildSeasonPosterRef(showId, showTmdbId, season) {
+@@ -712,7 +739,7 @@ function buildSeasonPosterRef(showId, showTmdbId, season) {
      };
  }
  
@@ -839,7 +917,7 @@ index ed46556..16e0b40 100644
      if (commonUtils.isNotArray(seasons) || commonUtils.isNullish(showId) || commonUtils.isNullish(showTmdbId)) {
          return false;
      }
-@@ -725,7 +747,7 @@ async function replaceSeasonImagesInPlace(seasons, showId, showTmdbId, showLangu
+@@ -725,7 +752,7 @@ async function replaceSeasonImagesInPlace(seasons, showId, showTmdbId, showLangu
              mediaType: "season",
              ref: {
                  ...buildSeasonPosterRef(showId, showTmdbId, season),
@@ -909,10 +987,10 @@ index f11e435..daf0d29 100644
  async function translateWrapperItems(bodyOverride) {
 diff --git a/trakt_simplified_chinese/src/shared/translation-scope.mjs b/trakt_simplified_chinese/src/shared/translation-scope.mjs
 new file mode 100644
-index 0000000..f53d647
+index 0000000..16ab6f9
 --- /dev/null
 +++ b/trakt_simplified_chinese/src/shared/translation-scope.mjs
-@@ -0,0 +1,366 @@
+@@ -0,0 +1,395 @@
 +// 只翻译中文影视：原始语言为中文的剧集/电影照常翻译；其他语言的文字内容保留 Trakt 原文，不做翻译。
 +// 海报：「中文影视用中文原海报」开启时中文影视按原片语言取海报，其他影视按「海报语言」（见 getChinesePosterMode）。
 +//
@@ -932,6 +1010,10 @@ index 0000000..f53d647
 +const CHINESE_LANGUAGES = new Set(["zh", "cn"]);
 +const LANGUAGE_STORE_KEY = "dj_trakt_fork_media_language";
 +const LANGUAGE_STORE_MAX_ENTRIES = 3000;
++// 评论记录单独存放：一页评论可能有上百条，和语言记录放在一起会把语言记录挤掉
++const COMMENT_STORE_KEY = "dj_trakt_fork_comment_scope";
++const COMMENT_STORE_MAX_ENTRIES = 3000;
++const LEGACY_COMMENT_KEY_PREFIX = "comment:";
 +const LANGUAGE_FETCH_LIMIT = 10;
 +const OUT_OF_SCOPE_MARK = "-";
 +
@@ -963,30 +1045,50 @@ index 0000000..f53d647
 +    return normalized ? CHINESE_LANGUAGES.has(normalized) : null;
 +}
 +
-+// ---------- 本地语言记录 ----------
++// ---------- 本地记录（语言、评论各一份，按写入先后淘汰最旧的） ----------
 +
-+function getLanguageState() {
++const STORES = {
++    language: { key: LANGUAGE_STORE_KEY, max: LANGUAGE_STORE_MAX_ENTRIES },
++    comment: { key: COMMENT_STORE_KEY, max: COMMENT_STORE_MAX_ENTRIES },
++};
++
++function getStoreState(name) {
 +    const context = globalThis.$ctx;
 +    if (!context) {
 +        return { store: {}, dirty: false };
 +    }
-+    if (!context.__translationScopeLanguages) {
++    context.__translationScopeStores ||= {};
++    if (!context.__translationScopeStores[name]) {
 +        let store = {};
 +        try {
-+            store = commonUtils.ensureObject(context.env?.getjson(LANGUAGE_STORE_KEY, {}));
++            store = commonUtils.ensureObject(context.env?.getjson(STORES[name].key, {}));
 +        } catch {
 +            store = {};
 +        }
-+        context.__translationScopeLanguages = { store, dirty: false };
++        const state = { store, dirty: false };
++        if (name === "language") {
++            // 旧版本把评论记录也放在语言记录里，读到时清掉
++            Object.keys(store)
++                .filter((key) => key.startsWith(LEGACY_COMMENT_KEY_PREFIX))
++                .forEach((key) => {
++                    delete store[key];
++                    state.dirty = true;
++                });
++        }
++        context.__translationScopeStores[name] = state;
 +    }
-+    return context.__translationScopeLanguages;
++    return context.__translationScopeStores[name];
 +}
 +
-+function writeStoreEntry(key, value) {
++function getLanguageState() {
++    return getStoreState("language");
++}
++
++function writeStoreEntry(key, value, name = "language") {
 +    if (!key || !value) {
 +        return;
 +    }
-+    const state = getLanguageState();
++    const state = getStoreState(name);
 +    if (state.store[key] === value) {
 +        return;
 +    }
@@ -995,23 +1097,28 @@ index 0000000..f53d647
 +    state.dirty = true;
 +}
 +
-+function flushLanguageStore() {
-+    const state = getLanguageState();
++function flushStore(name) {
++    const state = getStoreState(name);
 +    if (!state.dirty) {
 +        return;
 +    }
 +    const keys = Object.keys(state.store);
-+    if (keys.length > LANGUAGE_STORE_MAX_ENTRIES) {
-+        keys.slice(0, keys.length - LANGUAGE_STORE_MAX_ENTRIES).forEach((key) => {
++    if (keys.length > STORES[name].max) {
++        keys.slice(0, keys.length - STORES[name].max).forEach((key) => {
 +            delete state.store[key];
 +        });
 +    }
 +    try {
-+        globalThis.$ctx?.env?.setjson(state.store, LANGUAGE_STORE_KEY);
++        globalThis.$ctx?.env?.setjson(state.store, STORES[name].key);
 +        state.dirty = false;
 +    } catch (error) {
-+        globalThis.$ctx?.env?.log?.(`Trakt chinese-only language store save failed: ${error}`);
++        globalThis.$ctx?.env?.log?.(`Trakt chinese-only ${name} store save failed: ${error}`);
 +    }
++}
++
++function flushLanguageStore() {
++    flushStore("language");
++    flushStore("comment");
 +}
 +
 +function buildMediaKey(mediaType, idOrSlug) {
@@ -1175,11 +1282,11 @@ index 0000000..f53d647
 +}
 +
 +function markCommentsOutOfScope(commentIds) {
-+    commentIds.forEach((id) => writeStoreEntry(`comment:${id}`, OUT_OF_SCOPE_MARK));
++    commentIds.forEach((id) => writeStoreEntry(String(id), OUT_OF_SCOPE_MARK, "comment"));
 +}
 +
 +function isCommentOutOfScope(commentId) {
-+    return getLanguageState().store[`comment:${commentId}`] === OUT_OF_SCOPE_MARK;
++    return getStoreState("comment").store[String(commentId)] === OUT_OF_SCOPE_MARK;
 +}
 +
 +// ---------- 响应阶段放行 ----------

@@ -9,6 +9,8 @@ on:
 permissions:
   contents: write
   issues: write
+  # 保活时调用“启用工作流”接口需要
+  actions: write
 
 concurrency:
   group: sync-upstream
@@ -40,6 +42,24 @@ jobs:
       - name: 推送
         if: steps.sync.outputs.changed == 'true'
         run: git push origin HEAD:${{ github.ref_name }}
+
+      # 公开仓库 60 天没有活动时，GitHub 会自动停用定时任务。上游长期不更新时本仓库不会有新提交，
+      # 所以定时运行时：1) 调用“启用工作流”接口；2) 最近一次提交超过 45 天就推一个空提交。
+      # GitHub 没有写明这两种方式是否都算“活动”，所以两个都做。
+      - name: 保活（防止定时同步被停用）
+        if: github.event_name == 'schedule' && success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X PUT "repos/${{ github.repository }}/actions/workflows/sync-upstream.yml/enable" || echo "启用接口调用失败，忽略"
+          git fetch -q origin "${{ github.ref_name }}"
+          last="$(git log -1 --format=%ct "origin/${{ github.ref_name }}")"
+          days=$(( ($(date +%s) - last) / 86400 ))
+          echo "距最近一次提交 ${days} 天"
+          if [ "$days" -ge 45 ]; then
+            git commit --allow-empty -m "chore: 保活，防止定时同步被 GitHub 停用"
+            git push origin "HEAD:${{ github.ref_name }}"
+          fi
 
       - name: 失败时开 issue 提醒
         if: failure()
