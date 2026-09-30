@@ -17,11 +17,13 @@ const myBranch = config.branch; // main
 const enc = (s) => encodeURIComponent(s);
 const esc = (s) => s.replace(/[/.]/g, (c) => `\\${c}`);
 
-// 先替换带分支的形式，再替换通用形式
+// 先替换带分支的形式（分支名后面是 / 或引号等非路径字符都算），再替换通用形式
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+const branchTail = "(?=[^A-Za-z0-9._-]|$)";
 const replacements = [
-    [`raw.githubusercontent.com/${up}/${upBranch}/`, `raw.githubusercontent.com/${me}/${myBranch}/`],
-    [`github.com/${up}/tree/${upBranch}/`, `github.com/${me}/tree/${myBranch}/`],
-    [`${enc(up)}${enc("/")}${upBranch}${enc("/")}`, `${enc(me)}${enc("/")}${myBranch}${enc("/")}`],
+    [new RegExp(`raw\\.githubusercontent\\.com/${escapeRegExp(up)}/${escapeRegExp(upBranch)}${branchTail}`, "g"), `raw.githubusercontent.com/${me}/${myBranch}`],
+    [new RegExp(`github\\.com/${escapeRegExp(up)}/tree/${escapeRegExp(upBranch)}${branchTail}`, "g"), `github.com/${me}/tree/${myBranch}`],
+    [new RegExp(`${escapeRegExp(enc(up))}${escapeRegExp(enc("/"))}${escapeRegExp(upBranch)}${branchTail}`, "g"), `${enc(me)}${enc("/")}${enc(myBranch)}`],
     [up, me],
     [enc(up), enc(me)],
     [esc(up), esc(me)],
@@ -42,7 +44,11 @@ for (const file of files) {
     const before = fs.readFileSync(full, "utf8");
     let after = before;
     for (const [from, to] of replacements) {
-        if (from !== to) after = after.split(from).join(to);
+        if (from instanceof RegExp) {
+            after = after.replace(from, to);
+        } else if (from !== to) {
+            after = after.split(from).join(to);
+        }
     }
     if (after !== before) {
         fs.writeFileSync(full, after, "utf8");

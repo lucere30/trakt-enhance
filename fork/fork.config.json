@@ -10,5 +10,12 @@
         "trakt_simplified_chinese/trakt_simplified_chinese.js",
         "trakt_simplified_chinese/images"
     ],
-    "overlay": ["README.md", "fork", ".github"]
+    "overlay": [
+        "README.md",
+        "fork",
+        ".github"
+    ],
+    "extraTests": [
+        "tests/trakt_translation_scope.test.mjs"
+    ]
 }

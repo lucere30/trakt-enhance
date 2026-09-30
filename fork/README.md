@@ -18,6 +18,11 @@
 
 1. **复原 EplayerX 跳转按钮**（`patches/0001-restore-eplayerx.patch`）：撤销上游 `0886a1d`，默认顺序 EplayerX 1 / Forward 2 / Infuse 3 / Rex 4。
 2. **链接指向本仓库**（`localize.mjs`）：插件里的脚本地址、图标等从 `DemoJameson/Proxy.Modules` 改为 `lucere30/trakt-enhance`。
+3. **仅处理中文原片**（`patches/0002-chinese-only.patch`）：新增两个插件开关。
+   - 「仅处理中文原片」（默认开启）：原始语言为中文的剧集和电影照常翻译；其他语言的内容保留 Trakt 原始响应，不做任何处理（标题、简介、集数标题、海报、预告片、评论、口碑摘要、演职员表，以及 App 自己请求的中文译名）。片单名称和描述不处理。播放器跳转按钮、VIP、历史合并不受影响。
+   - 「人物页翻译」（默认开启）：上面开关开启时，人物页和人物搜索是否翻译演员名和简介。
+
+   这个补丁自带的测试列在 `fork.config.json` 的 `extraTests` 里，同步时一起运行。
 
 ## 自动同步
 
@@ -27,7 +32,8 @@
 2. 按顺序重放 `fork/patches/*.patch`（3-way 合并）；
 3. 运行 `localize.mjs` 改写链接；
 4. `npm ci && npm test`，其中会重新生成插件和脚本；
-5. 只挑出 `fork.config.json` 里 `keep` 列出的文件，连同 `overlay` 列出的本仓库文件，在 `main` 上追加一个 `sync:` 提交并推送。
+5. 运行 `extraTests` 列出的补丁自带测试；
+6. 只挑出 `fork.config.json` 里 `keep` 列出的文件，连同 `overlay` 列出的本仓库文件，在 `main` 上追加一个 `sync:` 提交并推送。
 
 任何一步失败，`main` 保持不变，并自动开一个标题为「上游同步失败，需要处理」的 issue。
 
@@ -35,7 +41,7 @@
 
 ## 补丁冲突时如何更新
 
-上游改动了补丁涉及的代码时会冲突，需要手动合并后更新补丁：
+上游改动了补丁涉及的代码时会冲突，需要手动合并后更新补丁（以 0001 为例，0002 同理；有多个补丁时按编号依次打上，只重新导出冲突的那个）：
 
 ```bash
 git clone https://github.com/lucere30/trakt-enhance.git && cd trakt-enhance

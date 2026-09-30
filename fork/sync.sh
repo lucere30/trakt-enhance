@@ -29,6 +29,8 @@ echo "上游 $UPSTREAM_BRANCH 最新提交：$UP_SHA"
 # 本仓库自己维护的文件（README、fork/、.github/）和要从构建结果里保留的文件
 mapfile -t OVERLAY_PATHS < <(node -p "require('./fork/fork.config.json').overlay.join('\n')")
 mapfile -t KEEP_PATHS < <(node -p "require('./fork/fork.config.json').keep.join('\n')")
+# 定制补丁自带的测试文件（上游 npm test 不会跑它们）
+mapfile -t EXTRA_TESTS < <(node -p "(require('./fork/fork.config.json').extraTests || []).join('\n')" | sed '/^$/d')
 
 # 输入指纹 = 上游提交 + 本仓库自己维护的内容。
 # 构建产物里带生成时间，每次构建都不同，所以用指纹判断是否需要重新同步。
@@ -81,7 +83,7 @@ done
 node "$ROOT/fork/localize.mjs"
 
 # 3) 重新生成构建产物并跑测试
-if ! { npm ci --no-audit --no-fund && npm test; } > "$LOG/build.log" 2>&1; then
+if ! { npm ci --no-audit --no-fund && npm test && { [ "${#EXTRA_TESTS[@]}" -eq 0 ] || node --test "${EXTRA_TESTS[@]}"; }; } > "$LOG/build.log" 2>&1; then
     tail -n 80 "$LOG/build.log"
     {
         echo "## 上游同步失败：构建或测试未通过"
