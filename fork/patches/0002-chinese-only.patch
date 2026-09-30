@@ -1,36 +1,28 @@
-From a481ab10f8b4b8e9811c43e6cb4d5b057996bff1 Mon Sep 17 00:00:00 2001
+From 63f3161b870d9d8022cbefea8e9a681229a9eca8 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
-Date: Wed, 30 Sep 2026 10:58:44 +0000
-Subject: [PATCH] =?UTF-8?q?feat(trakt):=20=E4=BB=85=E5=A4=84=E7=90=86?=
- =?UTF-8?q?=E4=B8=AD=E6=96=87=E5=8E=9F=E7=89=87?=
+Date: Wed, 30 Sep 2026 17:58:18 +0000
+Subject: [PATCH] =?UTF-8?q?feat(trakt):=20=E5=8F=AA=E7=BF=BB=E8=AF=91?=
+ =?UTF-8?q?=E4=B8=AD=E6=96=87=E5=BD=B1=E8=A7=86?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-新增插件开关「仅处理中文原片」（chineseOnlyTranslation，默认开启）：
-原始语言为中文的剧集和电影照常翻译；其他语言的内容保留 Trakt 原始响应，不做任何处理。
-
-- 列表逐条判断：非中文条目不翻译、不替换海报
-- 详情、季列表、预告片、评论（含回复）、口碑摘要、演职员表、App 自己请求的
-  /translations/zh：非中文原片原样放行
-- 片单名称和描述不处理
-- 新增开关「人物页翻译」（peopleTranslationEnabled，默认开启）：
-  控制人物页、人物搜索在该模式下是否翻译
-- 播放器跳转、VIP、历史合并等非翻译功能不受影响；季列表放行前仍缓存集 ID
-原始语言取自响应的 language 字段并记录在本地，未知时请求一次详情，仍未知按中文处理。
+新增开关「只翻译中文影视」（默认开启）：只翻译原始语言为中文的剧集和电影，
+其他语言的标题、简介、集数、评论、演职员等保留 Trakt 原文；海报对所有影视
+按「海报语言」处理（与原插件一致）。另加「人物页翻译」开关。
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01YH4kK6jKSf8gmN4WbmGa5W
 ---
  tests/helpers/trakt-test-helpers.mjs          |   3 +
- tests/trakt_translation_scope.test.mjs        | 303 +++++++++++++++++
+ tests/trakt_translation_scope.test.mjs        | 375 ++++++++++++++++++
  .../src/features/comments-translation.mjs     |   9 +-
- .../src/features/media-translation.mjs        |  29 ++
+ .../src/features/media-translation.mjs        |  42 ++
  .../src/module-manifest.mjs                   |  14 +
  trakt_simplified_chinese/src/response.mjs     |   7 +-
- .../src/shared/trakt-translation-helper.mjs   |  14 +-
- .../src/shared/translation-scope.mjs          | 313 ++++++++++++++++++
- 8 files changed, 684 insertions(+), 8 deletions(-)
+ .../src/shared/trakt-translation-helper.mjs   |  15 +-
+ .../src/shared/translation-scope.mjs          | 314 +++++++++++++++
+ 8 files changed, 769 insertions(+), 10 deletions(-)
  create mode 100644 tests/trakt_translation_scope.test.mjs
  create mode 100644 trakt_simplified_chinese/src/shared/translation-scope.mjs
 
@@ -64,19 +56,21 @@ index 258c774..b10c20e 100644
      });
 diff --git a/tests/trakt_translation_scope.test.mjs b/tests/trakt_translation_scope.test.mjs
 new file mode 100644
-index 0000000..acacba8
+index 0000000..5589b77
 --- /dev/null
 +++ b/tests/trakt_translation_scope.test.mjs
-@@ -0,0 +1,303 @@
+@@ -0,0 +1,375 @@
 +import assert from "node:assert/strict";
 +import test from "node:test";
 +
 +import { isChineseLanguage } from "../trakt_simplified_chinese/src/shared/translation-scope.mjs";
 +
++import { TEST_TMDB_API_KEY } from "./helpers/run-script.mjs";
 +import {
 +    createMediaTranslationCache,
 +    createMediaTranslationEntry,
 +    createPeopleTranslationCache,
++    createTmdbImagesResponse,
 +    createUnifiedPersistentData,
 +    parseUnifiedCache,
 +    readFixture,
@@ -169,7 +163,7 @@ index 0000000..acacba8
 +    "episode:11:1:3": createMediaTranslationEntry({ translation: { title: "英语剧第三集" } }),
 +};
 +
-+test("列表里只处理中文剧集，其他语言条目与 Trakt 返回完全一致", async () => {
++test("列表里只翻译中文剧集，其他语言条目（无 TMDb 海报可换时）与 Trakt 返回完全一致", async () => {
 +    const items = createWatchlistItems();
 +    const { result } = await runResponseCase({
 +        url: "https://api.trakt.tv/users/me/watchlist",
@@ -185,7 +179,7 @@ index 0000000..acacba8
 +    assert.deepEqual(payload[3], items[3]);
 +});
 +
-+test("关闭“仅处理中文原片”时与上游一致，所有条目都翻译", async () => {
++test("关闭“只翻译中文影视”时与上游一致，所有条目都翻译", async () => {
 +    const { result } = await runResponseCase({
 +        url: "https://api.trakt.tv/users/me/watchlist",
 +        body: JSON.stringify(createWatchlistItems()),
@@ -237,7 +231,7 @@ index 0000000..acacba8
 +    assert.equal(JSON.parse(result.body)[0].show.title, "未知剧中文名");
 +});
 +
-+test("英语剧集的季列表原样放行，但仍缓存集 ID 供播放器跳转按钮使用", async () => {
++test("英语剧集的季列表不翻译（无季海报可换时原样放行），但仍缓存集 ID 供播放器跳转按钮使用", async () => {
 +    const { result, httpLogs, persistentData } = await runResponseCase({
 +        url: "https://api.trakt.tv/shows/555/seasons?extended=episodes,full",
 +        body: readFixture("season-list.json"),
@@ -354,7 +348,7 @@ index 0000000..acacba8
 +    assert.match(JSON.parse(result.body).name, /汤姆·汉克斯/);
 +});
 +
-+test("最近评论列表只处理中文原片条目，英语条目保持原样并记住评论", async () => {
++test("最近评论列表只翻译中文影视条目，英语条目保持原样并记住评论", async () => {
 +    const items = [
 +        { movie: { title: "English Movie", language: "en", ids: { trakt: 123 } }, comment: { id: 7001, language: "en", comment: "Nice" } },
 +        { movie: { title: "Chinese Movie", language: "zh", ids: { trakt: 456 } }, comment: { id: 7002, language: "zh", comment: "很好" } },
@@ -370,6 +364,76 @@ index 0000000..acacba8
 +    assert.deepEqual(payload[0], items[0]);
 +    assert.equal(payload[1].movie.title, "中文电影名");
 +    assert.equal(readLanguageStore(persistentData)["comment:7001"], "-");
++});
++
++// ---------- 海报：所有影视都按「海报语言」处理（与原插件一致） ----------
++
++const TMDB_MOVIE_IMAGES_URL = `https://api.tmdb.org/3/movie/456/images?language=zh%2Cen&api_key=${TEST_TMDB_API_KEY}`;
++const TRAKT_POSTER = "https://walter.trakt.tv/images/movies/000/000/123/posters/original.jpg";
++const TMDB_CN_POSTER = "https://image.tmdb.org/t/p/w780/cn-poster.jpg";
++
++function createMovie(overrides = {}) {
++    return {
++        title: "Original Movie",
++        overview: "Original Overview",
++        ids: { trakt: 123, tmdb: 456 },
++        language: "en",
++        country: "us",
++        available_translations: ["en", "zh"],
++        images: { poster: [TRAKT_POSTER] },
++        ...overrides,
++    };
++}
++
++function createChinesePosterMock() {
++    return { [TMDB_MOVIE_IMAGES_URL]: createTmdbImagesResponse([{ iso_639_1: "zh", iso_3166_1: "CN", file_path: "/cn-poster.jpg", vote_average: 8, vote_count: 20 }]) };
++}
++
++test("英语电影详情：文字保留原文，海报按「海报语言=中文」换成中文海报", async () => {
++    const { result, httpLogs } = await runResponseCase({
++        url: "https://api.trakt.tv/movies/123",
++        body: JSON.stringify(createMovie()),
++        argument: { ...ON, posterImageMode: "chinese" },
++        httpGetMocks: createChinesePosterMock(),
++        persistentData: createPersistentData({ "movie:123": createMediaTranslationEntry({ translation: { title: "中文标题", overview: "中文简介" } }) }),
++    });
++
++    const payload = JSON.parse(result.body);
++    assert.equal(payload.title, "Original Movie");
++    assert.equal(payload.overview, "Original Overview");
++    assert.equal(payload.images.poster[0], TMDB_CN_POSTER);
++    assert.equal(hasTranslationRequest(httpLogs), false);
++});
++
++test("列表里的英语电影：文字保留原文，海报按「海报语言=中文」换成中文海报", async () => {
++    const { result } = await runResponseCase({
++        url: "https://api.trakt.tv/users/me/watchlist",
++        body: JSON.stringify([{ type: "movie", movie: createMovie() }]),
++        argument: { ...ON, posterImageMode: "chinese" },
++        httpGetMocks: createChinesePosterMock(),
++        persistentData: createPersistentData({ "movie:123": createMediaTranslationEntry({ translation: { title: "中文标题" } }) }),
++    });
++
++    const payload = JSON.parse(result.body);
++    assert.equal(payload[0].movie.title, "Original Movie");
++    assert.equal(payload[0].movie.images.poster[0], TMDB_CN_POSTER);
++});
++
++test("中文电影详情：文字照常翻译，「海报语言=原图」时保留 Trakt 海报", async () => {
++    const { result, httpLogs } = await runResponseCase({
++        url: "https://api.trakt.tv/movies/123",
++        body: JSON.stringify(createMovie({ language: "zh", country: "cn" })),
++        argument: { ...ON, posterImageMode: "default" },
++        persistentData: createPersistentData({ "movie:123": createMediaTranslationEntry({ translation: { title: "中文标题", overview: "中文简介", tagline: "中文标语" } }) }),
++    });
++
++    const payload = JSON.parse(result.body);
++    assert.equal(payload.title, "中文标题");
++    assert.equal(payload.images.poster[0], TRAKT_POSTER);
++    assert.equal(
++        httpLogs.some((log) => log.url.startsWith("https://api.tmdb.org/3/")),
++        false,
++    );
 +});
 diff --git a/trakt_simplified_chinese/src/features/comments-translation.mjs b/trakt_simplified_chinese/src/features/comments-translation.mjs
 index edca257..1296ca1 100644
@@ -399,7 +463,7 @@ index edca257..1296ca1 100644
      return {
          type: "respond",
 diff --git a/trakt_simplified_chinese/src/features/media-translation.mjs b/trakt_simplified_chinese/src/features/media-translation.mjs
-index 5ea35de..9a02c68 100644
+index 5ea35de..b760c9f 100644
 --- a/trakt_simplified_chinese/src/features/media-translation.mjs
 +++ b/trakt_simplified_chinese/src/features/media-translation.mjs
 @@ -2,6 +2,7 @@ import * as mediaTypes from "../shared/media-types.mjs";
@@ -410,11 +474,11 @@ index 5ea35de..9a02c68 100644
  import * as cacheUtils from "../utils/cache.mjs";
  import * as commonUtils from "../utils/common.mjs";
  import * as googleFallbackTranslation from "./google-fallback-translation.mjs";
-@@ -91,6 +92,18 @@ async function handleMediaDetail() {
+@@ -91,6 +92,28 @@ async function handleMediaDetail() {
          cacheUtils.saveLinkIdsCache(context.env, linkCache);
      }
  
-+    // 仅处理中文原片：剧集/电影看自身语言，季和单集看所属剧集；非中文原样放行
++    // 只翻译中文影视：剧集/电影看自身语言，季和单集看所属剧集；非中文不动文字，只按「海报语言」替换海报
 +    const isShowOrMovie = mediaType === mediaTypes.MEDIA_TYPE.SHOW || mediaType === mediaTypes.MEDIA_TYPE.MOVIE;
 +    if (isShowOrMovie) {
 +        translationScope.rememberMediaLanguage(mediaType, data);
@@ -423,17 +487,27 @@ index 5ea35de..9a02c68 100644
 +        ? await translationScope.isMediaInScope(mediaType, ref.traktId, data?.language)
 +        : await translationScope.isMediaInScope(mediaTypes.MEDIA_TYPE.SHOW, ref.showId);
 +    if (!inScope) {
-+        return { type: "passThrough" };
++        if (!traktTranslationHelper.shouldReplaceImages()) {
++            return { type: "passThrough" };
++        }
++        const imagesChanged = await traktTranslationHelper.replaceImagesInPlace(data, mediaType, {
++            ...ref,
++            tmdbId: data?.ids?.tmdb ?? null,
++            imageMode: context.argument.posterImageMode,
++            language: data?.language ?? null,
++            country: data?.country ?? null,
++        });
++        return imagesChanged ? { type: "respond", body: JSON.stringify(data) } : { type: "passThrough" };
 +    }
 +
      const cache = cacheUtils.loadCache(context.env);
      const backendState = traktTranslationHelper.createBackendState(traktTranslationHelper.MEDIA_CONFIG);
      let cacheChanged = false;
-@@ -149,6 +162,17 @@ async function handleTranslations() {
+@@ -149,6 +172,17 @@ async function handleTranslations() {
      const target = traktTranslationHelper.resolveTranslationRequestTarget(context.url);
      const merged = translationCache.normalizeTranslations(translationCache.sortTranslations(arr, traktTranslationHelper.PREFERRED_TRANSLATION_LANGUAGE));
  
-+    // 仅处理中文原片：App 自己请求非中文影视的中文翻译时原样放行（不归一化、不写缓存）
++    // 只翻译中文影视：App 自己请求非中文影视的中文翻译时原样放行（不归一化、不写缓存）
 +    if (!traktTranslationHelper.isScriptInitiatedTranslationRequest() && target && translationScope.isChineseOnlyEnabled()) {
 +        const inScope =
 +            target.mediaType === mediaTypes.MEDIA_TYPE.EPISODE
@@ -447,20 +521,23 @@ index 5ea35de..9a02c68 100644
      if (!traktTranslationHelper.isScriptInitiatedTranslationRequest() && target && traktTranslationHelper.buildMediaCacheLookupKey(target.mediaType, target)) {
          const normalized = translationCache.extractNormalizedTranslation(merged);
          const cache = cacheUtils.loadCache(context.env);
-@@ -192,6 +216,11 @@ async function handleSeasonEpisodesList() {
-     if (traktLinkIds.cacheEpisodeIdsFromSeasonList(linkCache, target.showId, seasons)) {
-         cacheUtils.saveLinkIdsCache(context.env, linkCache);
-     }
-+    // 仅处理中文原片：非中文剧集的季列表原样放行（上面的集 ID 缓存仍保留，播放器跳转按钮要用）
+@@ -232,6 +266,14 @@ async function handleSeasonEpisodesList() {
+           })
+         : Promise.resolve(false);
+ 
++    // 只翻译中文影视：非中文剧集的季列表不动文字，只按「海报语言」替换季海报
++    //（上面的集 ID 缓存仍保留，播放器跳转按钮要用）
 +    if (!(await translationScope.isMediaInScope(mediaTypes.MEDIA_TYPE.SHOW, target.showId))) {
++        const seasonImagesChanged = await seasonImagePromise;
 +        cacheUtils.clearCurrentSeason(context.env);
-+        return { type: "passThrough" };
++        return seasonImagesChanged ? { type: "respond", body: JSON.stringify(seasons) } : { type: "passThrough" };
 +    }
-     const shouldReplaceSeasonImages =
-         traktTranslationHelper.shouldReplaceImages() && seasons.some((season) => commonUtils.isArray(season?.images?.poster) && season.images.poster.length > 0);
-     const cachedShowEntry = shouldReplaceSeasonImages ? traktLinkIds.getLinkIdsCacheEntry(linkCache, target.showId) : null;
++
+     const currentSeasonNumber = cacheUtils.getCurrentSeason(context.env, target.showId);
+     const targetSeason = seasons.find((item) => {
+         return commonUtils.ensureArray(item?.episodes).some((episode) => Number(episode?.season) === currentSeasonNumber);
 diff --git a/trakt_simplified_chinese/src/module-manifest.mjs b/trakt_simplified_chinese/src/module-manifest.mjs
-index 8596f3b..d2a991a 100644
+index 8596f3b..9e3437c 100644
 --- a/trakt_simplified_chinese/src/module-manifest.mjs
 +++ b/trakt_simplified_chinese/src/module-manifest.mjs
 @@ -113,6 +113,20 @@ const argumentFields = [
@@ -471,15 +548,15 @@ index 8596f3b..d2a991a 100644
 +        key: "chineseOnlyTranslation",
 +        defaultValue: true,
 +        type: "boolean",
-+        tag: "仅处理中文原片",
-+        desc: "开启后只处理原始语言为中文的剧集和电影；其他语言的标题、简介、海报等内容全部保留 Trakt 原样，不做任何处理（「海报语言」只对中文原片生效）",
++        tag: "只翻译中文影视",
++        desc: "开启后只翻译原始语言为中文的剧集和电影；其他语言的标题、简介、集数、评论、演职员等保留 Trakt 原文。海报由「海报语言」控制",
 +    },
 +    {
 +        key: "peopleTranslationEnabled",
 +        defaultValue: true,
 +        type: "boolean",
 +        tag: "人物页翻译",
-+        desc: "开启「仅处理中文原片」时，人物页和人物搜索是否翻译演员名和简介；影视页里的演职员表仍按该影视的语言决定",
++        desc: "开启「只翻译中文影视」时，人物页和人物搜索是否翻译演员名和简介；影视页里的演职员表仍按该影视的语言决定",
 +    },
  ];
  
@@ -510,7 +587,7 @@ index 19f6c85..f320225 100644
  }
  
 diff --git a/trakt_simplified_chinese/src/shared/trakt-translation-helper.mjs b/trakt_simplified_chinese/src/shared/trakt-translation-helper.mjs
-index f11e435..2cbc652 100644
+index f11e435..3d7a795 100644
 --- a/trakt_simplified_chinese/src/shared/trakt-translation-helper.mjs
 +++ b/trakt_simplified_chinese/src/shared/trakt-translation-helper.mjs
 @@ -48,6 +48,7 @@ import {
@@ -521,7 +598,7 @@ index f11e435..2cbc652 100644
  
  const DIRECT_MEDIA_TYPE_SHOW_STATUSES = ["returning series", "ended", "canceled"];
  
-@@ -378,10 +379,15 @@ function unwrapDirectMediaItems(arr, mediaConfig) {
+@@ -378,11 +379,13 @@ function unwrapDirectMediaItems(arr, mediaConfig) {
      });
  }
  
@@ -532,17 +609,27 @@ index f11e435..2cbc652 100644
 -        return items;
 +    if (commonUtils.isNotArray(allItems) || allItems.length === 0) {
 +        return allItems;
-+    }
-+    // 仅处理中文原片：其他条目不翻译、不替换海报，保持 Trakt 原样
-+    const items = await translationScope.filterItemsInScope(allItems);
-+    if (items.length === 0) {
-+        return allItems;
      }
++    // 只翻译中文影视：文字只处理中文条目；海报对所有条目按「海报语言」处理（与原插件一致）
++    const items = await translationScope.filterItemsInScope(allItems);
  
      const context = globalThis.$ctx;
-@@ -445,7 +451,7 @@ async function translateMediaItemsInPlace(items, bodyOverride) {
+     const backendState = createBackendState(MEDIA_CONFIG);
+@@ -393,7 +396,7 @@ async function translateMediaItemsInPlace(items, bodyOverride) {
+     const imageCache = shouldReplaceMediaImages ? cacheUtils.loadImageCache(context.env) : {};
+     const imageBackendState = shouldReplaceMediaImages ? createImageBackendState() : null;
+     let skippedImageKeys = {};
+-    const imageTargets = shouldReplaceMediaImages ? collectImageTargets(items, MEDIA_CONFIG) : [];
++    const imageTargets = shouldReplaceMediaImages ? collectImageTargets(allItems, MEDIA_CONFIG) : [];
+     const imageReplacementPromise = shouldReplaceMediaImages
+         ? (async () => {
+               const { skippedKeys, targets } = await filterReplaceableImageTargets(imageTargets);
+@@ -443,9 +446,9 @@ async function translateMediaItemsInPlace(items, bodyOverride) {
+         applyOverrideToTarget(target, getOverrideFromTable(overridesTable, ref));
+     });
      if (shouldReplaceMediaImages) {
-         applyImagesToItems(items, imageCache, MEDIA_CONFIG, skippedImageKeys);
+-        applyImagesToItems(items, imageCache, MEDIA_CONFIG, skippedImageKeys);
++        applyImagesToItems(allItems, imageCache, MEDIA_CONFIG, skippedImageKeys);
      }
 -    return items;
 +    return allItems;
@@ -551,14 +638,15 @@ index f11e435..2cbc652 100644
  async function translateWrapperItems(bodyOverride) {
 diff --git a/trakt_simplified_chinese/src/shared/translation-scope.mjs b/trakt_simplified_chinese/src/shared/translation-scope.mjs
 new file mode 100644
-index 0000000..d8df9d0
+index 0000000..c8b2d32
 --- /dev/null
 +++ b/trakt_simplified_chinese/src/shared/translation-scope.mjs
-@@ -0,0 +1,313 @@
-+// 仅处理中文原片：原始语言为中文的剧集/电影照常翻译；其他语言的内容保留 Trakt 原始响应，不做任何处理。
+@@ -0,0 +1,314 @@
++// 只翻译中文影视：原始语言为中文的剧集/电影照常翻译；其他语言的文字内容保留 Trakt 原文，不做翻译。
++// 海报不受这里控制，所有影视都按「海报语言」处理（与原插件一致）。
 +//
-+// - 列表：逐条判断，只有中文原片条目会被翻译、替换海报；其他条目原样保留。
-+// - 绑定到单个影视的页面（详情、季列表、预告片、评论、口碑摘要、演职员表）：按该影视判断，非中文原片直接放行原始响应。
++// - 列表：逐条判断，只有中文条目的文字会被翻译。
++// - 绑定到单个影视的页面：详情、季列表只替换海报不动文字；预告片、评论、口碑摘要、演职员表对非中文影视原样放行。
 +// - 人物页、人物搜索：由「人物页翻译」开关决定（默认翻译）。
 +// - 片单名称和描述：不属于某个影视，不处理。
 +// - 非翻译功能（播放器跳转按钮、VIP、历史合并等）不受影响。
@@ -729,7 +817,7 @@ index 0000000..d8df9d0
 +    );
 +}
 +
-+// 返回需要处理的条目（中文原片或语言未知）；其他条目调用方不应触碰
++// 返回需要翻译文字的条目（中文或语言未知）；其他条目的文字调用方不应触碰
 +async function filterItemsInScope(items) {
 +    if (!isChineseOnlyEnabled() || commonUtils.isNotArray(items)) {
 +        return items;

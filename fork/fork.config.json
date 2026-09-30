@@ -19,13 +19,13 @@
         "tests/trakt_translation_scope.test.mjs"
     ],
     "argumentOrder": [
+        "fakeVipEnabled",
         "chineseOnlyTranslation",
         "translationEngine",
         "peopleTranslationEnabled",
         "characterTranslationEnabled",
         "posterImageMode",
         "historyEpisodesMergedByShow",
-        "fakeVipEnabled",
         "eplayerxButtonOrder",
         "forwardButtonOrder",
         "infuseButtonOrder",
