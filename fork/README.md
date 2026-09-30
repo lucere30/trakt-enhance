@@ -1,6 +1,6 @@
 # 定制与上游同步
 
-本仓库只发布 Loon 版「Trakt 增强」插件，脚本来自 [DemoJameson/Proxy.Modules](https://github.com/DemoJameson/Proxy.Modules)（MIT 许可）。
+本分支（`snow-base`）只发布 Loon 版「Trakt 增强」插件，以 [liixing/Proxy.Modules](https://github.com/liixing/Proxy.Modules)（snow 维护，基于 DemoJameson/Proxy.Modules，MIT 许可）为上游。
 
 ## 仓库里有什么
 
@@ -9,6 +9,7 @@
 | `trakt_simplified_chinese/trakt_simplified_chinese.plugin` | Loon 插件（自动生成） |
 | `trakt_simplified_chinese/trakt_simplified_chinese.js` | 插件加载的脚本（自动生成） |
 | `trakt_simplified_chinese/images/` | 图标与播放器 logo（来自上游） |
+| `trakt_simplified_chinese/*_clear_cache.js`、`*_expand_cache.js` | 插件引用的定时任务脚本（默认关闭）：手动清理本地缓存、缓存压力测试。上游有才保留（`keepIfExists`） |
 | `LICENSE` | 上游 MIT 许可证，按许可要求保留 |
 | `README.md`、`fork/`、`.github/` | 本仓库自己维护的说明、定制和同步工作流 |
 
@@ -16,14 +17,14 @@
 
 ## 定制内容
 
-1. **复原 EplayerX 跳转按钮**（`patches/0001-restore-eplayerx.patch`）：撤销上游 `0886a1d`，默认顺序 EplayerX 1 / Forward 2 / Infuse 3 / Rex 4。
-2. **链接指向本仓库**（`localize.mjs`）：插件里的脚本地址、图标等从 `DemoJameson/Proxy.Modules` 改为 `lucere30/trakt-enhance`。
+1. **EplayerX 跳转按钮**：上游（snow 版本）本来就保留了 EplayerX，本分支不需要额外补丁。
+2. **链接指向本仓库**（`localize.mjs`）：插件里的脚本地址、图标等从 `liixing/Proxy.Modules` 改为 `lucere30/trakt-enhance`。
 3. **仅处理中文原片**（`patches/0002-chinese-only.patch`）：新增两个插件开关。
    - 「仅处理中文原片」（默认开启）：原始语言为中文的剧集和电影照常处理；其他语言的内容保留 Trakt 原始响应，不做任何处理（标题、简介、集数标题、海报、预告片、评论、口碑摘要、演职员表，以及 App 自己请求的中文译名）。开启时「海报语言」只对中文原片生效，其他语言一律是 Trakt 原图。片单名称和描述不处理。播放器跳转按钮、VIP、历史合并不受影响。
    - 「人物页翻译」（默认开启）：上面开关开启时，人物页和人物搜索是否翻译演员名和简介。
 
    这个补丁自带的测试列在 `fork.config.json` 的 `extraTests` 里，同步时一起运行。
-4. **插件选项显示顺序**（`argument-order.mjs`）：按 `fork.config.json` 的 `argumentOrder` 调整 Loon 插件 `[Argument]` 段的上下顺序（翻译 → 显示 → 跳转按钮 → 高级）。只改显示顺序，传给脚本的参数顺序不变；上游新增的选项自动排在最后。
+4. **插件选项显示顺序**（`argument-order.mjs`）：按 `fork.config.json` 的 `argumentOrder` 调整 Loon 插件 `[Argument]` 段的上下顺序（翻译 → 显示 → 跳转按钮 → 高级；列表里有而上游没有的选项，如 Forward、Rex，会自动跳过）。只改显示顺序，传给脚本的参数顺序不变；上游新增的选项自动排在最后。
 
 ## 自动同步
 
@@ -42,12 +43,12 @@
 
 ## 补丁冲突时如何更新
 
-上游改动了补丁涉及的代码时会冲突，需要手动合并后更新补丁（以 0001 为例，0002 同理；有多个补丁时按编号依次打上，只重新导出冲突的那个）：
+上游改动了补丁涉及的代码时会冲突，需要手动合并后更新补丁（本分支目前只有 0002；有多个补丁时按编号依次打上，只重新导出冲突的那个）：
 
 ```bash
 git clone https://github.com/lucere30/trakt-enhance.git && cd trakt-enhance
-cp fork/patches/0001-restore-eplayerx.patch /tmp/old.patch
-git fetch https://github.com/DemoJameson/Proxy.Modules.git main
+cp fork/patches/0002-chinese-only.patch /tmp/old.patch
+git fetch https://github.com/liixing/Proxy.Modules.git main
 git switch --detach FETCH_HEAD
 git apply --3way /tmp/old.patch   # 冲突处 ours=上游、theirs=本仓库定制，合并后 git add
 npm ci && npm test                # 确认通过
@@ -60,15 +61,16 @@ git format-patch -1 --stdout -- . \
   ':(exclude)trakt_simplified_chinese/trakt_simplified_chinese.snippet' \
   ':(exclude)boxjs.json' > /tmp/new.patch
 git switch main
-cp /tmp/new.patch fork/patches/0001-restore-eplayerx.patch
-git commit -am "fork: 更新 EplayerX 补丁" && git push
+cp /tmp/new.patch fork/patches/0002-chinese-only.patch
+git commit -am "fork: 更新补丁" && git push
 ```
 
 推送后在 Actions 页面手动运行一次「跟随上游同步」。
 
-## 仍然依赖上游的在线服务
+## 仍然依赖的在线服务
 
-以下是上游作者部署的服务，本仓库没有替换：
+以下服务本仓库没有替换：
 
-- `proxy-modules.demojameson.de5.net`：翻译缓存后端，也负责下发 TMDb key（可在插件参数「翻译缓存接口」里改成自己部署的地址，部署方法见上游 `DEPLOY_VERCEL.md`）
-- `deeplx.demojameson.de5.net`：DeepLX 翻译
+- `traktmodule.eplayerx.com`：snow 部署的翻译缓存与跳转接口（Cloudflare Workers）
+- `api.deeplx.org`：公共 DeepLX 翻译
+- TMDb 密钥写死在脚本里（snow 版本未跟进原项目“由后端下发密钥”的改动）

@@ -29,6 +29,8 @@ echo "上游 $UPSTREAM_BRANCH 最新提交：$UP_SHA"
 # 本仓库自己维护的文件（README、fork/、.github/）和要从构建结果里保留的文件
 mapfile -t OVERLAY_PATHS < <(node -p "require('./fork/fork.config.json').overlay.join('\n')")
 mapfile -t KEEP_PATHS < <(node -p "require('./fork/fork.config.json').keep.join('\n')")
+# 上游有才保留的文件（例如插件引用的可选脚本），缺失时不算失败
+mapfile -t KEEP_IF_EXISTS < <(node -p "(require('./fork/fork.config.json').keepIfExists || []).join('\n')" | sed '/^$/d')
 # 定制补丁自带的测试文件（上游 npm test 不会跑它们）
 mapfile -t EXTRA_TESTS < <(node -p "(require('./fork/fork.config.json').extraTests || []).join('\n')" | sed '/^$/d')
 
@@ -119,6 +121,11 @@ for k in "${KEEP_PATHS[@]}"; do
         exit 1
     fi
     git add -f -- "$k"
+done
+for k in "${KEEP_IF_EXISTS[@]}"; do
+    if [ -e "$k" ]; then
+        git add -f -- "$k"
+    fi
 done
 rm -rf -- "${OVERLAY_PATHS[@]}"
 mapfile -t HEAD_OVERLAY < <(git -C "$ROOT" ls-tree --name-only HEAD -- "${OVERLAY_PATHS[@]}")

@@ -1,9 +1,9 @@
 {
-    "upstreamUrl": "https://github.com/DemoJameson/Proxy.Modules.git",
+    "upstreamUrl": "https://github.com/liixing/Proxy.Modules.git",
     "upstreamBranch": "main",
-    "upstreamRepo": "DemoJameson/Proxy.Modules",
+    "upstreamRepo": "liixing/Proxy.Modules",
     "repo": "lucere30/trakt-enhance",
-    "branch": "main",
+    "branch": "snow-base",
     "keep": [
         "LICENSE",
         "trakt_simplified_chinese/trakt_simplified_chinese.plugin",
@@ -32,5 +32,9 @@
         "rexButtonOrder",
         "backendBaseUrl",
         "debugMode"
+    ],
+    "keepIfExists": [
+        "trakt_simplified_chinese/trakt_simplified_chinese_clear_cache.js",
+        "trakt_simplified_chinese/trakt_simplified_chinese_expand_cache.js"
     ]
 }
