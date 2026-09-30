@@ -100,6 +100,9 @@ if ! { npm ci --no-audit --no-fund && npm test && { [ "${#EXTRA_TESTS[@]}" -eq 0
 fi
 tail -n 12 "$LOG/build.log"
 
+# 3.5) 调整 Loon 插件选项的显示顺序（只改 [Argument] 段行序，不影响传给脚本的参数）
+node "$ROOT/fork/argument-order.mjs" trakt_simplified_chinese/trakt_simplified_chinese.plugin
+
 # 4) 只保留 Loon 插件需要的文件，再放回本仓库自己维护的文件
 git read-tree --empty
 for k in "${KEEP_PATHS[@]}"; do

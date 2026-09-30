@@ -19,10 +19,11 @@
 1. **复原 EplayerX 跳转按钮**（`patches/0001-restore-eplayerx.patch`）：撤销上游 `0886a1d`，默认顺序 EplayerX 1 / Forward 2 / Infuse 3 / Rex 4。
 2. **链接指向本仓库**（`localize.mjs`）：插件里的脚本地址、图标等从 `DemoJameson/Proxy.Modules` 改为 `lucere30/trakt-enhance`。
 3. **仅处理中文原片**（`patches/0002-chinese-only.patch`）：新增两个插件开关。
-   - 「仅处理中文原片」（默认开启）：原始语言为中文的剧集和电影照常翻译；其他语言的内容保留 Trakt 原始响应，不做任何处理（标题、简介、集数标题、海报、预告片、评论、口碑摘要、演职员表，以及 App 自己请求的中文译名）。片单名称和描述不处理。播放器跳转按钮、VIP、历史合并不受影响。
+   - 「仅处理中文原片」（默认开启）：原始语言为中文的剧集和电影照常处理；其他语言的内容保留 Trakt 原始响应，不做任何处理（标题、简介、集数标题、海报、预告片、评论、口碑摘要、演职员表，以及 App 自己请求的中文译名）。开启时「海报语言」只对中文原片生效，其他语言一律是 Trakt 原图。片单名称和描述不处理。播放器跳转按钮、VIP、历史合并不受影响。
    - 「人物页翻译」（默认开启）：上面开关开启时，人物页和人物搜索是否翻译演员名和简介。
 
    这个补丁自带的测试列在 `fork.config.json` 的 `extraTests` 里，同步时一起运行。
+4. **插件选项显示顺序**（`argument-order.mjs`）：按 `fork.config.json` 的 `argumentOrder` 调整 Loon 插件 `[Argument]` 段的上下顺序（翻译 → 显示 → 跳转按钮 → 高级）。只改显示顺序，传给脚本的参数顺序不变；上游新增的选项自动排在最后。
 
 ## 自动同步
 
@@ -32,7 +33,7 @@
 2. 按顺序重放 `fork/patches/*.patch`（3-way 合并）；
 3. 运行 `localize.mjs` 改写链接；
 4. `npm ci && npm test`，其中会重新生成插件和脚本；
-5. 运行 `extraTests` 列出的补丁自带测试；
+5. 运行 `extraTests` 列出的补丁自带测试，然后用 `argument-order.mjs` 调整插件选项的显示顺序；
 6. 只挑出 `fork.config.json` 里 `keep` 列出的文件，连同 `overlay` 列出的本仓库文件，在 `main` 上追加一个 `sync:` 提交并推送。
 
 任何一步失败，`main` 保持不变，并自动开一个标题为「上游同步失败，需要处理」的 issue。

@@ -17,5 +17,20 @@
     ],
     "extraTests": [
         "tests/trakt_translation_scope.test.mjs"
+    ],
+    "argumentOrder": [
+        "chineseOnlyTranslation",
+        "translationEngine",
+        "peopleTranslationEnabled",
+        "characterTranslationEnabled",
+        "posterImageMode",
+        "historyEpisodesMergedByShow",
+        "fakeVipEnabled",
+        "eplayerxButtonOrder",
+        "forwardButtonOrder",
+        "infuseButtonOrder",
+        "rexButtonOrder",
+        "backendBaseUrl",
+        "debugMode"
     ]
 }
