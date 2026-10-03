@@ -23,6 +23,7 @@
         "chineseOnlyTranslation",
         "translationEngine",
         "peopleTranslationEnabled",
+        "personSearchTranslationEnabled",
         "characterTranslationEnabled",
         "chinesePosterEnabled",
         "posterImageMode",

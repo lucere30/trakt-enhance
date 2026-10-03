@@ -1,6 +1,6 @@
-From da31dbccd46bee99bbbf5a550550ed818410eb1d Mon Sep 17 00:00:00 2001
-From: Claude <noreply@anthropic.com>
-Date: Wed, 30 Sep 2026 19:00:55 +0000
+From 1ad4d669c15a456f6ae95124fcc4112a4163c318 Mon Sep 17 00:00:00 2001
+From: x <x@x>
+Date: Sat, 3 Oct 2026 07:05:27 +0000
 Subject: [PATCH] =?UTF-8?q?feat(trakt):=20=E5=8F=AA=E7=BF=BB=E8=AF=91?=
  =?UTF-8?q?=E4=B8=AD=E6=96=87=E5=BD=B1=E8=A7=86=E3=80=81=E4=B8=AD=E6=96=87?=
  =?UTF-8?q?=E5=BD=B1=E8=A7=86=E7=94=A8=E4=B8=AD=E6=96=87=E5=8E=9F=E6=B5=B7?=
@@ -13,23 +13,24 @@ Content-Transfer-Encoding: 8bit
 其他语言的标题、简介、集数、评论、演职员等保留 Trakt 原文。
 新增开关「中文影视用中文原海报」（默认开启）：中文影视固定按原片语言取
 TMDb 中文海报（优先原产地区版本），其他影视按「海报语言」。
-另加「人物页翻译」开关。评论记录与语言记录分开存放；粤语片（cn）同时接受
-zh 海报。脚本自己发起的详情请求带标记请求头，响应阶段原样放行。
+另加「人物页翻译」「人物搜索翻译」两个独立开关，分别控制人物详情页和
+人物搜索（含本月生日人物列表）。评论记录与语言记录分开存放；粤语片（cn）
+同时接受 zh 海报。脚本自己发起的详情请求带标记请求头，响应阶段原样放行。
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01YH4kK6jKSf8gmN4WbmGa5W
+Claude-Session: https://claude.ai/code/session_01DtU3uiPj2Ju7W28SiDKqsk
 ---
  tests/helpers/trakt-test-helpers.mjs          |   5 +
- tests/trakt_translation_scope.test.mjs        | 557 ++++++++++++++++++
+ tests/trakt_translation_scope.test.mjs        | 603 ++++++++++++++++++
  .../src/features/comments-translation.mjs     |   9 +-
  .../src/features/media-translation.mjs        |  60 +-
- .../src/module-manifest.mjs                   |  23 +-
+ .../src/module-manifest.mjs                   |  30 +-
  .../src/outbound/trakt-api-client.mjs         |  19 +-
  trakt_simplified_chinese/src/response.mjs     |  12 +-
  .../src/shared/media-image-replacement.mjs    |  49 +-
  .../src/shared/trakt-translation-helper.mjs   |  17 +-
- .../src/shared/translation-scope.mjs          | 395 +++++++++++++
- 10 files changed, 1116 insertions(+), 30 deletions(-)
+ .../src/shared/translation-scope.mjs          | 401 ++++++++++++
+ 10 files changed, 1175 insertions(+), 30 deletions(-)
  create mode 100644 tests/trakt_translation_scope.test.mjs
  create mode 100644 trakt_simplified_chinese/src/shared/translation-scope.mjs
 
@@ -65,10 +66,10 @@ index 258c774..37badb7 100644
      });
 diff --git a/tests/trakt_translation_scope.test.mjs b/tests/trakt_translation_scope.test.mjs
 new file mode 100644
-index 0000000..ced2a6c
+index 0000000..f5f533c
 --- /dev/null
 +++ b/tests/trakt_translation_scope.test.mjs
-@@ -0,0 +1,557 @@
+@@ -0,0 +1,603 @@
 +import assert from "node:assert/strict";
 +import test from "node:test";
 +
@@ -338,7 +339,53 @@ index 0000000..ced2a6c
 +    }
 +});
 +
-+test("人物页翻译开关：关闭时人物页、人物搜索原样放行", async () => {
++const PERSON_SEARCH_BODY = JSON.stringify([{ type: "person", score: 1, person: { name: "Tom Hanks", ids: { trakt: 42, slug: "tom-hanks", tmdb: 31 } } }]);
++
++test("人物页翻译开关：关闭时只放行人物页，人物搜索照常翻译", async () => {
++    const page = await runResponseCase({
++        url: "https://api.trakt.tv/people/tom-hanks",
++        body: readFixture("people-detail.json"),
++        argument: { ...ON, peopleTranslationEnabled: false },
++        persistentData: createPersistentData(),
++    });
++    assertPassThrough(page.result);
++    assert.equal(hasTranslationRequest(page.httpLogs), false);
++
++    for (const url of ["https://api.trakt.tv/search/person?query=tom", "https://api.trakt.tv/people/this_month"]) {
++        const { result } = await runResponseCase({
++            url,
++            body: PERSON_SEARCH_BODY,
++            argument: { ...ON, peopleTranslationEnabled: false },
++            persistentData: createUnifiedPersistentData({ googlePeople: JSON.parse(createPeopleTranslationCache()) }),
++        });
++        assert.notEqual(result.body, undefined, url);
++        assert.match(JSON.parse(result.body)[0].person.name, /汤姆·汉克斯/, url);
++    }
++});
++
++test("人物搜索翻译开关：关闭时只放行人物搜索和本月生日人物，人物页照常翻译", async () => {
++    for (const url of ["https://api.trakt.tv/search/person?query=tom", "https://api.trakt.tv/people/this_month"]) {
++        const { result, httpLogs } = await runResponseCase({
++            url,
++            body: readFixture("media-people-list.json"),
++            argument: { ...ON, personSearchTranslationEnabled: false },
++            persistentData: createPersistentData(),
++        });
++        assertPassThrough(result);
++        assert.equal(hasTranslationRequest(httpLogs), false, url);
++    }
++
++    const { result } = await runResponseCase({
++        url: "https://api.trakt.tv/people/42",
++        body: readFixture("people-detail.json"),
++        argument: { ...ON, personSearchTranslationEnabled: false },
++        persistentData: createUnifiedPersistentData({ googlePeople: JSON.parse(createPeopleTranslationCache()) }),
++    });
++    assert.notEqual(result.body, undefined);
++    assert.match(JSON.parse(result.body).name, /汤姆·汉克斯/);
++});
++
++test("两个人物开关都关闭时人物页、人物搜索都原样放行", async () => {
 +    const cases = [
 +        { url: "https://api.trakt.tv/people/tom-hanks", fixture: "people-detail.json" },
 +        { url: "https://api.trakt.tv/search/person?query=tom", fixture: "media-people-list.json" },
@@ -348,7 +395,7 @@ index 0000000..ced2a6c
 +        const { result, httpLogs } = await runResponseCase({
 +            url,
 +            body: readFixture(fixture),
-+            argument: { ...ON, peopleTranslationEnabled: false },
++            argument: { ...ON, peopleTranslationEnabled: false, personSearchTranslationEnabled: false },
 +            persistentData: createPersistentData(),
 +        });
 +        assertPassThrough(result);
@@ -772,7 +819,7 @@ index 5ea35de..88f11ff 100644
      const targetSeason = seasons.find((item) => {
          return commonUtils.ensureArray(item?.episodes).some((episode) => Number(episode?.season) === currentSeasonNumber);
 diff --git a/trakt_simplified_chinese/src/module-manifest.mjs b/trakt_simplified_chinese/src/module-manifest.mjs
-index 8596f3b..1b25717 100644
+index 8596f3b..42bed6b 100644
 --- a/trakt_simplified_chinese/src/module-manifest.mjs
 +++ b/trakt_simplified_chinese/src/module-manifest.mjs
 @@ -36,7 +36,7 @@ const argumentFields = [
@@ -784,7 +831,7 @@ index 8596f3b..1b25717 100644
      },
      {
          key: "historyEpisodesMergedByShow",
-@@ -113,6 +113,27 @@ const argumentFields = [
+@@ -113,6 +113,34 @@ const argumentFields = [
          tag: "调试模式",
          desc: "禁用本地缓存：不读写持久化存储；禁用远端缓存：不请求后端缓存接口；禁用所有缓存：两者皆禁用",
      },
@@ -800,7 +847,14 @@ index 8596f3b..1b25717 100644
 +        defaultValue: true,
 +        type: "boolean",
 +        tag: "人物页翻译",
-+        desc: "开启「只翻译中文影视」时，人物页和人物搜索是否翻译演员名和简介；影视页里的演职员表仍按该影视的语言决定",
++        desc: "开启「只翻译中文影视」时，人物详情页是否翻译演员名和简介；人物搜索见「人物搜索翻译」，影视页里的演职员表仍按该影视的语言决定",
++    },
++    {
++        key: "personSearchTranslationEnabled",
++        defaultValue: true,
++        type: "boolean",
++        tag: "人物搜索翻译",
++        desc: "开启「只翻译中文影视」时，人物搜索结果（含本月生日人物列表）是否翻译演员名和简介；与「人物页翻译」互不影响",
 +    },
 +    {
 +        key: "chinesePosterEnabled",
@@ -1065,16 +1119,16 @@ index f11e435..daf0d29 100644
  async function translateWrapperItems(bodyOverride) {
 diff --git a/trakt_simplified_chinese/src/shared/translation-scope.mjs b/trakt_simplified_chinese/src/shared/translation-scope.mjs
 new file mode 100644
-index 0000000..16ab6f9
+index 0000000..74ec18e
 --- /dev/null
 +++ b/trakt_simplified_chinese/src/shared/translation-scope.mjs
-@@ -0,0 +1,395 @@
+@@ -0,0 +1,401 @@
 +// 只翻译中文影视：原始语言为中文的剧集/电影照常翻译；其他语言的文字内容保留 Trakt 原文，不做翻译。
 +// 海报：「中文影视用中文原海报」开启时中文影视按原片语言取海报，其他影视按「海报语言」（见 getChinesePosterMode）。
 +//
 +// - 列表：逐条判断，只有中文条目的文字会被翻译。
 +// - 绑定到单个影视的页面：详情、季列表只替换海报不动文字；预告片、评论、口碑摘要、演职员表对非中文影视原样放行。
-+// - 人物页、人物搜索：由「人物页翻译」开关决定（默认翻译）。
++// - 人物页：由「人物页翻译」开关决定；人物搜索（含本月生日人物列表）：由「人物搜索翻译」开关决定（默认都翻译）。
 +// - 片单名称和描述：不属于某个影视，不处理。
 +// - 非翻译功能（播放器跳转按钮、VIP、历史合并等）不受影响。
 +//
@@ -1384,7 +1438,9 @@ index 0000000..16ab6f9
 +];
 +
 +// 人物页：由「人物页翻译」开关决定
-+const PEOPLE_ROUTES = [/^people\/[a-z0-9-]+$/i, /^search\/person$/i, /^people\/this_month$/i];
++// 人物页（「人物页翻译」）和人物搜索/人物列表（「人物搜索翻译」）各由一个开关决定
++const PERSON_PAGE_ROUTES = [/^people\/(?!this_month$)[a-z0-9-]+$/i];
++const PERSON_SEARCH_ROUTES = [/^search\/person$/i, /^people\/this_month$/i];
 +
 +// 片单名称和描述：不属于某个影视，不处理
 +const UNBOUND_ROUTES = [
@@ -1415,7 +1471,11 @@ index 0000000..16ab6f9
 +        return true;
 +    }
 +
-+    if (PEOPLE_ROUTES.some((pattern) => pattern.test(path))) {
++    if (PERSON_SEARCH_ROUTES.some((pattern) => pattern.test(path))) {
++        return globalThis.$ctx?.argument?.personSearchTranslationEnabled === false;
++    }
++
++    if (PERSON_PAGE_ROUTES.some((pattern) => pattern.test(path))) {
 +        return globalThis.$ctx?.argument?.peopleTranslationEnabled === false;
 +    }
 +
