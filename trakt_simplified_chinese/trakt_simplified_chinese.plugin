@@ -9,8 +9,8 @@
 fakeVipEnabled = switch, "true", tag=伪装成 VIP, desc=启用后伪装为 Trakt VIP 会员，移除 App 中的广告
 chineseOnlyTranslation = switch, "true", tag=只翻译中文影视, desc=开启后只翻译原始语言为中文的剧集和电影；其他语言的标题、简介、集数、评论、演职员等保留 Trakt 原文。海报见「中文影视用中文原海报」和「海报语言」
 translationEngine = select,"谷歌翻译","DeepLX","关闭",tag=翻译部分文本,desc=选择翻译引擎：谷歌翻译（快，需翻墙）、DeepLX（慢，可直连）、关闭
-peopleTranslationEnabled = switch, "true", tag=人物页翻译, desc=开启「只翻译中文影视」时，人物详情页是否翻译演员名和简介；人物搜索见「人物搜索翻译」，影视页里的演职员表仍按该影视的语言决定
-personSearchTranslationMode = select,"全部翻译","华人和日韩名","仅华人名","关闭",tag=人物搜索翻译,desc=开启「只翻译中文影视」时，人物搜索结果（含本月生日人物列表）翻译谁的名字和简介。华人和日韩名：TMDb 中文名不带「·」的人；仅华人名：再排除出生在日本、韩国的人；其他人保留原文。与「人物页翻译」互不影响
+peopleTranslationEnabled = switch, "true", tag=人物页翻译, desc=人物详情页是否翻译演员名和简介，不受「只翻译中文影视」影响；人物搜索见「人物搜索翻译」，影视页里的演职员表仍按该影视的语言决定
+personSearchTranslationMode = select,"全部翻译","华人和日韩名","仅华人名","关闭",tag=人物搜索翻译,desc=人物搜索结果（含本月生日人物列表）翻译谁的名字和简介，不受「只翻译中文影视」影响。华人和日韩名：TMDb 中文名不带「·」的人；仅华人名：再排除出生在日本、韩国的人；其他人保留原文。与「人物页翻译」互不影响
 characterTranslationEnabled = switch, "true", tag=用豆瓣翻译角色名, desc=启用后会用豆瓣翻译角色名
 chinesePosterEnabled = switch, "true", tag=中文影视用中文原海报, desc=开启后原始语言为中文的剧集和电影固定使用 TMDb 中文海报（优先原产地区版本，如台剧用台版、港片用港版），不受「海报语言」影响；TMDb 没有中文海报时保留 Trakt 原图
 posterImageMode = select,"原片语言","中文","原图",tag=海报语言,desc=开启「中文影视用中文原海报」时只对其他语言的影视生效。原片语言使用 TMDb 影片原始语言图片；中文使用 TMDb 中文图片；原图保留 Trakt 原图
