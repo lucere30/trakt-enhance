@@ -1,4 +1,4 @@
-From 472eb651594e8050ce4c84f374cc86882d018368 Mon Sep 17 00:00:00 2001
+From 799e96e62697a75cfe696c3c64ba8cf3fa7e6c7c Mon Sep 17 00:00:00 2001
 From: lucere30 <sunsetseaside@outlook.com>
 Date: Wed, 30 Sep 2026 09:58:22 +0000
 Subject: [PATCH] =?UTF-8?q?feat(trakt):=20=E5=A4=8D=E5=8E=9F=20EplayerX=20?=
@@ -16,7 +16,7 @@ Claude-Session: https://claude.ai/code/session_01YH4kK6jKSf8gmN4WbmGa5W
 ---
  README.md                                     |  2 +-
  public/index.html                             |  2 +-
- tests/trakt_argument.test.mjs                 | 71 +++++++++-------
+ tests/trakt_argument.test.mjs                 | 69 +++++++++-------
  tests/trakt_live_script.test.mjs              |  4 +-
  tests/trakt_script_routes.test.mjs            | 49 +++++------
  tests/trakt_script_watchnow.test.mjs          | 81 +++++++++++++++----
@@ -24,7 +24,7 @@ Claude-Session: https://claude.ai/code/session_01YH4kK6jKSf8gmN4WbmGa5W
  .../features/player-injection-sofatime.mjs    |  1 +
  .../src/module-manifest.mjs                   | 35 +++++---
  .../src/shared/player-definitions.mjs         | 38 +++++++++
- 10 files changed, 204 insertions(+), 87 deletions(-)
+ 10 files changed, 201 insertions(+), 88 deletions(-)
 
 diff --git a/README.md b/README.md
 index 3742cef..6453835 100644
@@ -53,7 +53,7 @@ index 6554857..2cb714f 100644
                      icon: "https://raw.githubusercontent.com/DemoJameson/Proxy.Modules/main/trakt_simplified_chinese/images/trakt.webp",
                      githubFolder: "https://github.com/DemoJameson/Proxy.Modules/tree/main/trakt_simplified_chinese",
 diff --git a/tests/trakt_argument.test.mjs b/tests/trakt_argument.test.mjs
-index 0560851..61bba63 100644
+index 4c62443..b0e23ad 100644
 --- a/tests/trakt_argument.test.mjs
 +++ b/tests/trakt_argument.test.mjs
 @@ -7,19 +7,20 @@ import { DEEPLX_TRANSLATE_API_URL as DEEPLX_TRANSLATE_URL } from "../trakt_simpl
@@ -149,33 +149,43 @@ index 0560851..61bba63 100644
  });
  
  test("posterImageMode 非法值回退 original", () => {
-@@ -82,16 +87,20 @@ test("posterImageMode 支持中文选项标签", () => {
+@@ -82,21 +87,21 @@ test("posterImageMode 支持中文选项标签", () => {
  });
  
  test("debugMode 非法值回退 off", () => {
--    const parsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,https://backend.example,bogus]"));
-+    const parsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,4,https://backend.example,bogus]"));
+-    const parsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,https://backend.example,false,bogus]"));
++    const parsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,4,https://backend.example,false,bogus]"));
  
      assert.equal(parsed.debugMode, "off");
  });
  
  test("debugMode 支持中文选项标签", () => {
--    const offParsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,https://backend.example,关闭]"));
--    const localParsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,https://backend.example,禁用本地缓存]"));
--    const remoteParsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,https://backend.example,禁用远端缓存]"));
--    const allParsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,https://backend.example,禁用所有缓存]"));
-+    const offParsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,4,https://backend.example,关闭]"));
-+    const localParsed = normalizeArgument(
-+        applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,4,https://backend.example,禁用本地缓存]"),
-+    );
-+    const remoteParsed = normalizeArgument(
-+        applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,4,https://backend.example,禁用远端缓存]"),
-+    );
-+    const allParsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,4,https://backend.example,禁用所有缓存]"));
+-    const offParsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,https://backend.example,false,关闭]"));
++    const offParsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,4,https://backend.example,false,关闭]"));
+     const localParsed = normalizeArgument(
+-        applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,https://backend.example,false,禁用本地缓存]"),
++        applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,4,https://backend.example,false,禁用本地缓存]"),
+     );
+     const remoteParsed = normalizeArgument(
+-        applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,https://backend.example,false,禁用远端缓存]"),
++        applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,4,https://backend.example,false,禁用远端缓存]"),
+     );
+     const allParsed = normalizeArgument(
+-        applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,https://backend.example,false,禁用所有缓存]"),
++        applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,4,https://backend.example,false,禁用所有缓存]"),
+     );
  
      assert.equal(offParsed.debugMode, "off");
-     assert.equal(localParsed.debugMode, "disableLocal");
-@@ -177,6 +186,7 @@ test("全部序号为 0 时 /movies/:id/watchnow 不注入自定义播放器条
+@@ -116,7 +121,7 @@ test("tamperAppAuthorizationEnabled 默认关闭，对象和字符串参数均
+     );
+     assert.equal(objectParsed.tamperAppAuthorizationEnabled, true);
+ 
+-    const stringParsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,https://backend.example,true,关闭]"));
++    const stringParsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,4,https://backend.example,true,关闭]"));
+     assert.equal(stringParsed.tamperAppAuthorizationEnabled, true);
+ });
+ 
+@@ -198,6 +203,7 @@ test("全部序号为 0 时 /movies/:id/watchnow 不注入自定义播放器条
          url: "https://api.trakt.tv/movies/123/watchnow",
          body: readFixture("movie-watchnow.json"),
          argument: {
@@ -183,7 +193,7 @@ index 0560851..61bba63 100644
              forwardButtonOrder: 0,
              infuseButtonOrder: 0,
              rexButtonOrder: 0,
-@@ -205,6 +215,7 @@ test("仅 forward 序号非 0 时 /movies/:id/watchnow 只注入 forward 条目"
+@@ -226,6 +232,7 @@ test("仅 forward 序号非 0 时 /movies/:id/watchnow 只注入 forward 条目"
          url: "https://api.trakt.tv/movies/123/watchnow",
          body: readFixture("movie-watchnow.json"),
          argument: {
@@ -218,10 +228,10 @@ index 4cc1dca..0bbc9a2 100644
  
  test("live script: /users/me/watchlist/movies 会走登录态列表翻译链路", async (t) => {
 diff --git a/tests/trakt_script_routes.test.mjs b/tests/trakt_script_routes.test.mjs
-index 988805b..7531924 100644
+index c8319b5..62646e1 100644
 --- a/tests/trakt_script_routes.test.mjs
 +++ b/tests/trakt_script_routes.test.mjs
-@@ -327,16 +327,16 @@ test("TMDB tv 详情只保留注入播放器并清除原有观看来源", async
+@@ -405,16 +405,16 @@ test("TMDB tv 详情只保留注入播放器并清除原有观看来源", async
  
      const payload = JSON.parse(result.body);
      const ad = payload["watch/providers"].results.AD;
@@ -243,7 +253,7 @@ index 988805b..7531924 100644
      assert.equal(us.buy, undefined);
      assert.equal(us.ads, undefined);
  });
-@@ -356,8 +356,8 @@ test("TMDB movie 详情会注入 type=movie 的 deeplink", async () => {
+@@ -434,8 +434,8 @@ test("TMDB movie 详情会注入 type=movie 的 deeplink", async () => {
  
      const payload = JSON.parse(result.body);
      const us = payload["watch/providers"].results.US;
@@ -254,7 +264,7 @@ index 988805b..7531924 100644
  });
  
  test("TMDB 详情在自定义序号下只注入排序 1 的播放器", async () => {
-@@ -368,18 +368,18 @@ test("TMDB 详情在自定义序号下只注入排序 1 的播放器", async ()
+@@ -446,18 +446,18 @@ test("TMDB 详情在自定义序号下只注入排序 1 的播放器", async ()
              "user-agent": "Sofa Time/1.0",
          },
          argument: {
@@ -279,7 +289,7 @@ index 988805b..7531924 100644
  });
  
  test("TMDB 详情在部分序号为 0 时只注入序号非 0 的最前播放器", async () => {
-@@ -390,6 +390,7 @@ test("TMDB 详情在部分序号为 0 时只注入序号非 0 的最前播放器
+@@ -468,6 +468,7 @@ test("TMDB 详情在部分序号为 0 时只注入序号非 0 的最前播放器
              "user-agent": "Sofa Time/1.0",
          },
          argument: {
@@ -287,7 +297,7 @@ index 988805b..7531924 100644
              forwardButtonOrder: 1,
              infuseButtonOrder: 2,
          },
-@@ -409,6 +410,7 @@ test("TMDB 详情在全部序号为 0 时不注入任何播放器", async () =>
+@@ -487,6 +488,7 @@ test("TMDB 详情在全部序号为 0 时不注入任何播放器", async () =>
              "user-agent": "Sofa Time/1.0",
          },
          argument: {
@@ -295,7 +305,7 @@ index 988805b..7531924 100644
              forwardButtonOrder: 0,
              infuseButtonOrder: 0,
              rexButtonOrder: 0,
-@@ -431,7 +433,7 @@ test("TMDB 详情在 results 为空时为全部 REGION_CODES 注入", async () =
+@@ -509,7 +511,7 @@ test("TMDB 详情在 results 为空时为全部 REGION_CODES 注入", async () =
      const results = payload["watch/providers"].results;
      assert.equal(Object.keys(results).length, REGION_CODES.length);
      REGION_CODES.forEach((regionCode) => {
@@ -304,7 +314,7 @@ index 988805b..7531924 100644
          assert.equal(results[regionCode].flatrate.length, 1, `region ${regionCode} flatrate`);
      });
  });
-@@ -474,9 +476,9 @@ test("TMDB 详情 flatrate 已有旧自定义条目时也会整体清除只留
+@@ -552,9 +554,9 @@ test("TMDB 详情 flatrate 已有旧自定义条目时也会整体清除只留
          url: "https://api.themoviedb.org/3/tv/108978?api_key=x&append_to_response=watch/providers",
          body: createTmdbDetailBody({
              US: {
@@ -316,7 +326,7 @@ index 988805b..7531924 100644
                      { logo_path: "/prime.jpg", provider_id: 119, provider_name: "Amazon Prime Video", display_priority: 2 },
                  ],
              },
-@@ -489,7 +491,7 @@ test("TMDB 详情 flatrate 已有旧自定义条目时也会整体清除只留
+@@ -567,7 +569,7 @@ test("TMDB 详情 flatrate 已有旧自定义条目时也会整体清除只留
      const payload = JSON.parse(result.body);
      const us = payload["watch/providers"].results.US;
      assert.equal(us.flatrate.length, 1);
@@ -325,7 +335,7 @@ index 988805b..7531924 100644
  });
  
  test("TMDb provider catalog 会注入自定义 provider", async () => {
-@@ -504,7 +506,7 @@ test("TMDb provider catalog 会注入自定义 provider", async () => {
+@@ -582,7 +584,7 @@ test("TMDb provider catalog 会注入自定义 provider", async () => {
      const payload = JSON.parse(result.body);
      assert.deepEqual(
          payload.results.slice(0, 3).map((item) => item.provider_id),
@@ -334,7 +344,7 @@ index 988805b..7531924 100644
      );
      assert.ok(payload.results.some((item) => item.provider_id === 8));
      assert.equal(payload.results.filter((item) => item.provider_id === 2).length, 1);
-@@ -518,16 +520,16 @@ test("TMDb provider catalog 在自定义序号下会按序号升序重排自定
+@@ -596,16 +598,16 @@ test("TMDb provider catalog 在自定义序号下会按序号升序重排自定
              "user-agent": "Sofa Time/1.0",
          },
          argument: {
@@ -355,7 +365,7 @@ index 988805b..7531924 100644
      );
  });
  
-@@ -539,6 +541,7 @@ test("TMDb provider catalog 在全部序号为 0 时仍保留全部自定义 pro
+@@ -617,6 +619,7 @@ test("TMDb provider catalog 在全部序号为 0 时仍保留全部自定义 pro
              "user-agent": "Sofa Time/1.0",
          },
          argument: {
@@ -363,7 +373,7 @@ index 988805b..7531924 100644
              forwardButtonOrder: 0,
              infuseButtonOrder: 0,
              rexButtonOrder: 0,
-@@ -548,7 +551,7 @@ test("TMDb provider catalog 在全部序号为 0 时仍保留全部自定义 pro
+@@ -626,7 +629,7 @@ test("TMDb provider catalog 在全部序号为 0 时仍保留全部自定义 pro
      const payload = JSON.parse(result.body);
      assert.deepEqual(
          payload.results.slice(0, 3).map((item) => item.provider_id),
@@ -612,7 +622,7 @@ index b03f21c..d578883 100644
      [playerDefinitions.PLAYER_TYPE.INFUSE]: 3,
      [playerDefinitions.PLAYER_TYPE.REX]: 4,
 diff --git a/trakt_simplified_chinese/src/module-manifest.mjs b/trakt_simplified_chinese/src/module-manifest.mjs
-index ae918b4..8596f3b 100644
+index 8f12b0a..1044b56 100644
 --- a/trakt_simplified_chinese/src/module-manifest.mjs
 +++ b/trakt_simplified_chinese/src/module-manifest.mjs
 @@ -8,7 +8,7 @@ const DEFAULT_BACKEND_BASE_URL = "https://proxy-modules.demojameson.de5.net";

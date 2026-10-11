@@ -1,4 +1,4 @@
-From 43e5f553fce85a079afab68cb31aafc9480e1b63 Mon Sep 17 00:00:00 2001
+From faff093fd2ee8acf19f5d55a5c7f4fbf4b321764 Mon Sep 17 00:00:00 2001
 From: x <x@x>
 Date: Sat, 3 Oct 2026 07:05:27 +0000
 Subject: [PATCH] =?UTF-8?q?feat(trakt):=20=E5=8F=AA=E7=BF=BB=E8=AF=91?=
@@ -45,10 +45,10 @@ Claude-Session: https://claude.ai/code/session_01DtU3uiPj2Ju7W28SiDKqsk
  create mode 100644 trakt_simplified_chinese/src/shared/translation-scope.mjs
 
 diff --git a/tests/helpers/trakt-test-helpers.mjs b/tests/helpers/trakt-test-helpers.mjs
-index 258c774..37badb7 100644
+index 888cea6..ac526c1 100644
 --- a/tests/helpers/trakt-test-helpers.mjs
 +++ b/tests/helpers/trakt-test-helpers.mjs
-@@ -279,6 +279,7 @@ function createWrappedMovieBody() {
+@@ -281,6 +281,7 @@ function createWrappedMovieBody() {
  
  // 测试默认引擎固定为 deeplx，复用既有 DeepLX mock 断言，避免 39 个集成测试因默认引擎改为 google 而失效。
  // 需要验证 google 默认引擎的用例在 argument 中显式指定 translationEngine: "google" 并 mock translate-pa 端点。
@@ -56,7 +56,7 @@ index 258c774..37badb7 100644
  function runResponseCase(input) {
      const { argument, headers, ...rest } = input ?? {};
      return runScript({
-@@ -286,6 +287,8 @@ function runResponseCase(input) {
+@@ -288,6 +289,8 @@ function runResponseCase(input) {
          ...rest,
          argument: {
              translationEngine: "deeplx",
@@ -65,8 +65,8 @@ index 258c774..37badb7 100644
              ...argument,
          },
          headers: {
-@@ -302,6 +305,8 @@ function runRequestCase(input) {
-         ...rest,
+@@ -305,6 +308,8 @@ function runRequestCase(input) {
+         requestBody: requestBody ?? body,
          argument: {
              translationEngine: "deeplx",
 +            chineseOnlyTranslation: false,
@@ -1317,7 +1317,7 @@ index 0000000..ec5a1a9
 +
 +export { getPersonSearchMode, handleScopedPeopleSearchList, isEastAsianName, normalizePersonSearchMode, PERSON_SEARCH_MODE, resolveRegionFromBirthplace };
 diff --git a/trakt_simplified_chinese/src/module-manifest.mjs b/trakt_simplified_chinese/src/module-manifest.mjs
-index 8596f3b..a2041ad 100644
+index 1044b56..cc31a5d 100644
 --- a/trakt_simplified_chinese/src/module-manifest.mjs
 +++ b/trakt_simplified_chinese/src/module-manifest.mjs
 @@ -36,7 +36,7 @@ const argumentFields = [
@@ -1329,7 +1329,7 @@ index 8596f3b..a2041ad 100644
      },
      {
          key: "historyEpisodesMergedByShow",
-@@ -113,6 +113,36 @@ const argumentFields = [
+@@ -120,6 +120,36 @@ const argumentFields = [
          tag: "调试模式",
          desc: "禁用本地缓存：不读写持久化存储；禁用远端缓存：不请求后端缓存接口；禁用所有缓存：两者皆禁用",
      },
@@ -1407,10 +1407,10 @@ index 37202d8..766d43f 100644
 -export { fetchBulkTranslations, fetchEpisodeDetail, fetchMediaDetail, fetchTranslationPayload };
 +export { fetchBulkTranslations, fetchEpisodeDetail, fetchMediaDetail, fetchTranslationPayload, isScriptInitiatedDetailRequest, SCRIPT_DETAIL_REQUEST_HEADER };
 diff --git a/trakt_simplified_chinese/src/response.mjs b/trakt_simplified_chinese/src/response.mjs
-index 19f6c85..3130efe 100644
+index 1151f23..5926310 100644
 --- a/trakt_simplified_chinese/src/response.mjs
 +++ b/trakt_simplified_chinese/src/response.mjs
-@@ -3,11 +3,14 @@ import * as googleFallbackTranslationHandler from "./features/google-fallback-tr
+@@ -3,12 +3,15 @@ import * as googleFallbackTranslationHandler from "./features/google-fallback-tr
  import * as historyEpisodesMergedByShowHandler from "./features/history-episodes-merged-by-show.mjs";
  import * as listsTranslationHandler from "./features/lists-translation.mjs";
  import * as mediaTranslationHandler from "./features/media-translation.mjs";
@@ -1419,13 +1419,14 @@ index 19f6c85..3130efe 100644
  import * as playerInjectionSofaTimeHandler from "./features/player-injection-sofatime.mjs";
  import * as playerInjectionTraktHandler from "./features/player-injection-trakt.mjs";
  import * as sentimentsTranslationHandler from "./features/sentiments-translation.mjs";
+ import * as tamperAppAuthorizationHandler from "./features/tamper-app-authorization.mjs";
 +import * as traktApiClient from "./outbound/trakt-api-client.mjs";
  import { createRoute, dispatchRoutes } from "./shared/route.mjs";
 +import * as translationScope from "./shared/translation-scope.mjs";
  
  function createResponsePhaseRoutes() {
      return [
-@@ -113,8 +116,8 @@ function createResponsePhaseRoutes() {
+@@ -126,8 +129,8 @@ function createResponsePhaseRoutes() {
          }),
  
          createRoute({ pattern: /^people\/[^/]+\/(movies|shows)$/i, id: "people.mediaCredits", handler: peopleTranslationHandler.handlePersonMediaCreditsList }),
@@ -1436,7 +1437,7 @@ index 19f6c85..3130efe 100644
  
          createRoute({ pattern: /^users\/[^/]+\/mir$/i, id: "users.mir", handler: mediaTranslationHandler.handleMonthlyReview }),
  
-@@ -202,7 +205,15 @@ function createResponsePhaseRoutes() {
+@@ -215,7 +218,15 @@ function createResponsePhaseRoutes() {
      ];
  }
  
