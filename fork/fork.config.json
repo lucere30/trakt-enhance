@@ -21,6 +21,7 @@
     ],
     "argumentOrder": [
         "fakeVipEnabled",
+        "chineseLocale",
         "chineseOnlyTranslation",
         "translationEngine",
         "peopleTranslationEnabled",

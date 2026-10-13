@@ -1,4 +1,4 @@
-From 799e96e62697a75cfe696c3c64ba8cf3fa7e6c7c Mon Sep 17 00:00:00 2001
+From 88d1df75c8630b396742cd47942a3dc3a70adad0 Mon Sep 17 00:00:00 2001
 From: lucere30 <sunsetseaside@outlook.com>
 Date: Wed, 30 Sep 2026 09:58:22 +0000
 Subject: [PATCH] =?UTF-8?q?feat(trakt):=20=E5=A4=8D=E5=8E=9F=20EplayerX=20?=
@@ -14,56 +14,60 @@ Content-Transfer-Encoding: 8bit
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01YH4kK6jKSf8gmN4WbmGa5W
 ---
- README.md                                     |  2 +-
- public/index.html                             |  2 +-
- tests/trakt_argument.test.mjs                 | 69 +++++++++-------
- tests/trakt_live_script.test.mjs              |  4 +-
- tests/trakt_script_routes.test.mjs            | 49 +++++------
- tests/trakt_script_watchnow.test.mjs          | 81 +++++++++++++++----
- trakt_simplified_chinese/src/argument.mjs     |  8 +-
- .../features/player-injection-sofatime.mjs    |  1 +
- .../src/module-manifest.mjs                   | 35 +++++---
- .../src/shared/player-definitions.mjs         | 38 +++++++++
- 10 files changed, 201 insertions(+), 88 deletions(-)
+ README.md                                     |   2 +-
+ public/index.html                             |   2 +-
+ tests/trakt_argument.test.mjs                 |  77 +++++++++--------
+ tests/trakt_live_script.test.mjs              |   4 +-
+ tests/trakt_script_routes.test.mjs            |  49 ++++++-----
+ tests/trakt_script_watchnow.test.mjs          |  81 +++++++++++++++---
+ trakt_simplified_chinese/images/eplayerx.webp | Bin 0 -> 7740 bytes
+ .../images/eplayerx_logo.webp                 | Bin 0 -> 16830 bytes
+ trakt_simplified_chinese/src/argument.mjs     |   8 +-
+ .../features/player-injection-sofatime.mjs    |   1 +
+ .../src/module-manifest.mjs                   |  35 +++++---
+ .../src/shared/player-definitions.mjs         |  38 ++++++++
+ 12 files changed, 205 insertions(+), 92 deletions(-)
+ create mode 100644 trakt_simplified_chinese/images/eplayerx.webp
+ create mode 100644 trakt_simplified_chinese/images/eplayerx_logo.webp
 
 diff --git a/README.md b/README.md
-index 3742cef..6453835 100644
+index c7ac767..b830532 100644
 --- a/README.md
 +++ b/README.md
 @@ -6,7 +6,7 @@
  
  | 脚本                       | 说明                                              | Loon                       | Surge                          | Quantumult X                 |
  | -------------------------- | ------------------------------------------------- | -------------------------- | ------------------------------ | ---------------------------- |
--| Trakt Simplified Chinese   | 优先补全和显示 Trakt 的简体中文标题、简介等内容，并在影片详情页添加 Forward、Infuse、Rex 跳转按钮 | [`.plugin`][trakt-plugin] | [`.sgmodule`][trakt-sgmodule] | [`.snippet`][trakt-snippet] |
-+| Trakt Simplified Chinese   | 优先补全和显示 Trakt 的简体中文标题、简介等内容，并在影片详情页添加 EplayerX、Forward、Infuse、Rex 跳转按钮 | [`.plugin`][trakt-plugin] | [`.sgmodule`][trakt-sgmodule] | [`.snippet`][trakt-snippet] |
+-| Trakt Simplified Chinese   | 优先补全和显示 Trakt 的中文标题、简介等内容（简体 / 台湾繁体 / 香港繁体），海报语言可选中文地区，并在影片详情页添加 Forward、Infuse、Rex 跳转按钮 | [`.plugin`][trakt-plugin] | [`.sgmodule`][trakt-sgmodule] | [`.snippet`][trakt-snippet] |
++| Trakt Simplified Chinese   | 优先补全和显示 Trakt 的中文标题、简介等内容（简体 / 台湾繁体 / 香港繁体），海报语言可选中文地区，并在影片详情页添加 EplayerX、Forward、Infuse、Rex 跳转按钮 | [`.plugin`][trakt-plugin] | [`.sgmodule`][trakt-sgmodule] | [`.snippet`][trakt-snippet] |
  | Fix Infuse Image Language  | 调整 TMDB 图片语言排序，改善 Infuse 图片语言匹配  | [`.plugin`][infuse-plugin] | [`.sgmodule`][infuse-sgmodule] | [`.snippet`][infuse-snippet] |
  | IMDB API Redirect to tiffara | 将 imdbapi.dev 及其所有子域名重定向到 tiffara.com | [`.plugin`][imdb-plugin]   | [`.sgmodule`][imdb-sgmodule]   | [`.snippet`][imdb-snippet]   |
  
 diff --git a/public/index.html b/public/index.html
-index 6554857..2cb714f 100644
+index ffc5423..2af8df5 100644
 --- a/public/index.html
 +++ b/public/index.html
 @@ -525,7 +525,7 @@
                      id: "trakt_simplified_chinese",
                      name: "Trakt 增强",
                      description:
--                        "Trakt App 各页面从英文改为简体中文，支持中文标题、简介和海报；历史页面剧集类别的已观看记录按电视剧合并；Trakt 和 SofaTime 的影片详情页添加 Forward、Infuse、Rex 跳转按钮；部分兼容其它使用了 Trakt API 的应用。",
-+                        "Trakt App 各页面从英文改为简体中文，支持中文标题、简介和海报；历史页面剧集类别的已观看记录按电视剧合并；Trakt 和 SofaTime 的影片详情页添加 EplayerX、Forward、Infuse、Rex 跳转按钮；部分兼容其它使用了 Trakt API 的应用。",
+-                        "Trakt App 各页面从英文改为简体中文或港台繁体，包括海报；历史页面剧集类别的已观看记录按电视剧合并；Trakt 的影片详情页添加 Forward、Infuse、Rex 跳转按钮；部分兼容其它使用了 Trakt API 的应用。",
++                        "Trakt App 各页面从英文改为简体中文或港台繁体，包括海报；历史页面剧集类别的已观看记录按电视剧合并；Trakt 的影片详情页添加 EplayerX、Forward、Infuse、Rex 跳转按钮；部分兼容其它使用了 Trakt API 的应用。",
                      qxTag: "Trakt Simplified Chinese",
                      icon: "https://raw.githubusercontent.com/DemoJameson/Proxy.Modules/main/trakt_simplified_chinese/images/trakt.webp",
                      githubFolder: "https://github.com/DemoJameson/Proxy.Modules/tree/main/trakt_simplified_chinese",
 diff --git a/tests/trakt_argument.test.mjs b/tests/trakt_argument.test.mjs
-index 4c62443..b0e23ad 100644
+index 71b9c94..9892e3a 100644
 --- a/tests/trakt_argument.test.mjs
 +++ b/tests/trakt_argument.test.mjs
-@@ -7,19 +7,20 @@ import { DEEPLX_TRANSLATE_API_URL as DEEPLX_TRANSLATE_URL } from "../trakt_simpl
+@@ -13,19 +13,20 @@ import { DEEPLX_TRANSLATE_API_URL as DEEPLX_TRANSLATE_URL } from "../trakt_simpl
  
  import { createUnifiedPersistentData, parseUnifiedCache, readFixture, runRequestCase, runResponseCase } from "./helpers/trakt-test-helpers.mjs";
  
--test("字符串参数第 0 位解析为 fakeVipEnabled，第 1 位解析为 posterImageMode，第 5-7 位解析为 *Order 数字", () => {
--    const parsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,true,false,2,1,3]"));
-+test("字符串参数第 0 位解析为 fakeVipEnabled，第 1 位解析为 posterImageMode，第 5-8 位解析为 *Order 数字", () => {
-+    const parsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,true,false,2,1,3,4]"));
+-test("字符串参数第 0 位解析为 fakeVipEnabled，第 1 位 chineseLocale，第 2 位 posterImageMode，第 6-8 位为 *Order 数字", () => {
+-    const parsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,cn,original,google,false,true,2,1,3]"));
++test("字符串参数第 0 位解析为 fakeVipEnabled，第 1 位 chineseLocale，第 2 位 posterImageMode，第 6-9 位为 *Order 数字", () => {
++    const parsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,cn,original,google,false,true,2,1,3,4]"));
  
      assert.equal(parsed.fakeVipEnabled, true);
      assert.equal(parsed.posterImageMode, "original");
@@ -83,11 +87,11 @@ index 4c62443..b0e23ad 100644
 +    assert.deepEqual(parsed.enabledPlayerTypes, ["forward", "eplayerx", "infuse", "rex"]);
  });
  
- test("translationEngine 默认 google，且位于 characterTranslationEnabled 前一位", () => {
-@@ -29,42 +30,46 @@ test("translationEngine 默认 google，且位于 characterTranslationEnabled 
-     const parsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,true,false]"));
+ test("translationEngine 位于 characterTranslationEnabled 前，历史合并位于其后面", () => {
+@@ -40,42 +41,46 @@ test("translationEngine 位于 characterTranslationEnabled 前，历史合并位
      assert.equal(parsed.translationEngine, "google");
      assert.equal(parsed.characterTranslationEnabled, false);
+     assert.equal(parsed.historyEpisodesMergedByShow, true);
 -    assert.equal(parsed.playerButtonOrder.forward, 1);
 -    assert.deepEqual(parsed.orderedPlayerTypes, ["forward", "infuse", "rex"]);
 -    assert.deepEqual(parsed.enabledPlayerTypes, ["forward", "infuse", "rex"]);
@@ -107,9 +111,9 @@ index 4c62443..b0e23ad 100644
 +    assert.equal(defaults.playerButtonOrder.infuse, 3);
 +    assert.equal(defaults.playerButtonOrder.rex, 4);
  
--    const parsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,true,false,abc,NaN,2.5]"));
+-    const parsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,cn,original,google,false,true,abc,NaN,2.5]"));
 -    assert.equal(parsed.playerButtonOrder.forward, 1);
-+    const parsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,true,false,abc,NaN,2.5,bogus]"));
++    const parsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,cn,original,google,false,true,abc,NaN,2.5,bogus]"));
 +    assert.equal(parsed.playerButtonOrder.eplayerx, 1);
 +    assert.equal(parsed.playerButtonOrder.forward, 2);
      assert.equal(parsed.playerButtonOrder.infuse, 2);
@@ -118,13 +122,13 @@ index 4c62443..b0e23ad 100644
  });
  
  test("序号 0 在 enabledPlayerTypes 中隐藏，但仍保留在 orderedPlayerTypes 末尾", () => {
--    const parsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,true,false,0,2,1]"));
+-    const parsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,cn,original,google,false,true,0,2,1]"));
 -    assert.equal(parsed.playerButtonOrder.forward, 0);
 -    assert.equal(parsed.playerButtonOrder.infuse, 2);
 -    assert.equal(parsed.playerButtonOrder.rex, 1);
 -    assert.deepEqual(parsed.orderedPlayerTypes, ["rex", "infuse", "forward"]);
 -    assert.deepEqual(parsed.enabledPlayerTypes, ["rex", "infuse"]);
-+    const parsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,true,false,0,2,1,4]"));
++    const parsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,cn,original,google,false,true,0,2,1,4]"));
 +    assert.equal(parsed.playerButtonOrder.eplayerx, 0);
 +    assert.equal(parsed.playerButtonOrder.forward, 2);
 +    assert.equal(parsed.playerButtonOrder.infuse, 1);
@@ -148,44 +152,77 @@ index 4c62443..b0e23ad 100644
 +    assert.deepEqual(parsed.enabledPlayerTypes, ["eplayerx", "forward", "rex"]);
  });
  
- test("posterImageMode 非法值回退 original", () => {
-@@ -82,21 +87,21 @@ test("posterImageMode 支持中文选项标签", () => {
+ test("fakeVipEnabled 是配置第一项，chineseLocale 是第二项，只解析新显示标签", () => {
+@@ -102,7 +107,7 @@ test("fakeVipEnabled 是配置第一项，chineseLocale 是第二项，只解析
+ });
+ 
+ test("位置参数只按当前顺序解析（首项为 fakeVipEnabled，第二项为目标语言），不再兼容历史顺序", () => {
+-    const parsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,tw,original,google,true,true,1,2,3,https://backend.example,false,关闭]"));
++    const parsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,tw,original,google,true,true,1,2,3,4,https://backend.example,false,关闭]"));
+     assert.equal(parsed.fakeVipEnabled, true);
+     assert.equal(parsed.chineseLocale, "tw");
+     assert.equal(parsed.posterImageMode, "original");
+@@ -113,7 +118,7 @@ test("位置参数只按当前顺序解析（首项为 fakeVipEnabled，第二
+     assert.equal(parsed.backendBaseUrl, "https://backend.example");
+ 
+     // 旧顺序（首项为 chineseLocale）不再识别：首项被当作 fakeVipEnabled，第二项被当作 chineseLocale 并回落 cn
+-    const legacyOrder = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[tw,true,original,true,google,true,1,2,3,https://backend.example,false,关闭]"));
++    const legacyOrder = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[tw,true,original,true,google,true,1,2,3,4,https://backend.example,false,关闭]"));
+     assert.equal(legacyOrder.fakeVipEnabled, true);
+     assert.equal(legacyOrder.chineseLocale, "cn");
+     assert.equal(legacyOrder.debugMode, "off");
+@@ -121,12 +126,12 @@ test("位置参数只按当前顺序解析（首项为 fakeVipEnabled，第二
+ });
+ 
+ test("字符串参数兼容平台包裹：Loon 方括号、Surge 双引号与逐项引号", () => {
+-    const base = "true,繁體中文（台灣）,原片语言,谷歌翻译,true,true,1,2,3,https://backend.example,false,关闭";
++    const base = "true,繁體中文（台灣）,原片语言,谷歌翻译,true,true,1,2,3,4,https://backend.example,false,关闭";
+     const wrappedArguments = [
+         `[${base}]`,
+         `"${base}"`,
+         `'${base}'`,
+-        '"true","繁體中文（台灣）","原片语言","谷歌翻译","true","true","1","2","3","https://backend.example","false","关闭"',
++        '"true","繁體中文（台灣）","原片语言","谷歌翻译","true","true","1","2","3","4","https://backend.example","false","关闭"',
+     ];
+ 
+     for (const wrapped of wrappedArguments) {
+@@ -175,21 +180,21 @@ test("posterImageMode 支持中文选项标签", () => {
  });
  
  test("debugMode 非法值回退 off", () => {
--    const parsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,https://backend.example,false,bogus]"));
-+    const parsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,4,https://backend.example,false,bogus]"));
+-    const parsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,cn,original,google,true,true,1,2,3,https://backend.example,false,bogus]"));
++    const parsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,cn,original,google,true,true,1,2,3,4,https://backend.example,false,bogus]"));
  
      assert.equal(parsed.debugMode, "off");
  });
  
  test("debugMode 支持中文选项标签", () => {
--    const offParsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,https://backend.example,false,关闭]"));
-+    const offParsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,4,https://backend.example,false,关闭]"));
+-    const offParsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,cn,original,google,true,true,1,2,3,https://backend.example,false,关闭]"));
++    const offParsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,cn,original,google,true,true,1,2,3,4,https://backend.example,false,关闭]"));
      const localParsed = normalizeArgument(
--        applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,https://backend.example,false,禁用本地缓存]"),
-+        applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,4,https://backend.example,false,禁用本地缓存]"),
+-        applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,cn,original,google,true,true,1,2,3,https://backend.example,false,禁用本地缓存]"),
++        applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,cn,original,google,true,true,1,2,3,4,https://backend.example,false,禁用本地缓存]"),
      );
      const remoteParsed = normalizeArgument(
--        applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,https://backend.example,false,禁用远端缓存]"),
-+        applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,4,https://backend.example,false,禁用远端缓存]"),
+-        applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,cn,original,google,true,true,1,2,3,https://backend.example,false,禁用远端缓存]"),
++        applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,cn,original,google,true,true,1,2,3,4,https://backend.example,false,禁用远端缓存]"),
      );
      const allParsed = normalizeArgument(
--        applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,https://backend.example,false,禁用所有缓存]"),
-+        applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,4,https://backend.example,false,禁用所有缓存]"),
+-        applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,cn,original,google,true,true,1,2,3,https://backend.example,false,禁用所有缓存]"),
++        applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,cn,original,google,true,true,1,2,3,4,https://backend.example,false,禁用所有缓存]"),
      );
  
      assert.equal(offParsed.debugMode, "off");
-@@ -116,7 +121,7 @@ test("tamperAppAuthorizationEnabled 默认关闭，对象和字符串参数均
+@@ -209,7 +214,7 @@ test("tamperAppAuthorizationEnabled 默认关闭，对象和字符串参数均
      );
      assert.equal(objectParsed.tamperAppAuthorizationEnabled, true);
  
--    const stringParsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,https://backend.example,true,关闭]"));
-+    const stringParsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,original,true,google,true,1,2,3,4,https://backend.example,true,关闭]"));
+-    const stringParsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,cn,original,google,true,true,1,2,3,https://backend.example,true,关闭]"));
++    const stringParsed = normalizeArgument(applyArgumentStringConfig(createDefaultArgumentConfig(), "[true,cn,original,google,true,true,1,2,3,4,https://backend.example,true,关闭]"));
      assert.equal(stringParsed.tamperAppAuthorizationEnabled, true);
  });
  
-@@ -198,6 +203,7 @@ test("全部序号为 0 时 /movies/:id/watchnow 不注入自定义播放器条
+@@ -291,6 +296,7 @@ test("全部序号为 0 时 /movies/:id/watchnow 不注入自定义播放器条
          url: "https://api.trakt.tv/movies/123/watchnow",
          body: readFixture("movie-watchnow.json"),
          argument: {
@@ -193,7 +230,7 @@ index 4c62443..b0e23ad 100644
              forwardButtonOrder: 0,
              infuseButtonOrder: 0,
              rexButtonOrder: 0,
-@@ -226,6 +232,7 @@ test("仅 forward 序号非 0 时 /movies/:id/watchnow 只注入 forward 条目"
+@@ -319,6 +325,7 @@ test("仅 forward 序号非 0 时 /movies/:id/watchnow 只注入 forward 条目"
          url: "https://api.trakt.tv/movies/123/watchnow",
          body: readFixture("movie-watchnow.json"),
          argument: {
@@ -202,10 +239,10 @@ index 4c62443..b0e23ad 100644
              infuseButtonOrder: 0,
              rexButtonOrder: 0,
 diff --git a/tests/trakt_live_script.test.mjs b/tests/trakt_live_script.test.mjs
-index 4cc1dca..0bbc9a2 100644
+index 47202eb..61aa370 100644
 --- a/tests/trakt_live_script.test.mjs
 +++ b/tests/trakt_live_script.test.mjs
-@@ -291,9 +291,9 @@ test("live script: /movies/:id/watchnow 响应会注入自定义播放器条目"
+@@ -424,9 +424,9 @@ test("live script: /movies/:id/watchnow 响应会注入自定义播放器条目"
          });
      });
  
@@ -216,7 +253,7 @@ index 4cc1dca..0bbc9a2 100644
      assert.equal(
          httpLogs.some((log) => /\?extended=cloud9,full,watchnow$/.test(log.url)),
          true,
-@@ -323,9 +323,9 @@ test("live script: /users/settings 响应会注入 vip、关闭广告并补 watc
+@@ -456,9 +456,9 @@ test("live script: /users/settings 响应会注入 vip、关闭广告并补 watc
      assert.equal(payload.user.vip, true);
      assert.equal(payload.account.display_ads, false);
      assert.ok(Array.isArray(payload.browsing?.watchnow?.favorites));
@@ -228,10 +265,10 @@ index 4cc1dca..0bbc9a2 100644
  
  test("live script: /users/me/watchlist/movies 会走登录态列表翻译链路", async (t) => {
 diff --git a/tests/trakt_script_routes.test.mjs b/tests/trakt_script_routes.test.mjs
-index c8319b5..62646e1 100644
+index c9e5b88..5288997 100644
 --- a/tests/trakt_script_routes.test.mjs
 +++ b/tests/trakt_script_routes.test.mjs
-@@ -405,16 +405,16 @@ test("TMDB tv 详情只保留注入播放器并清除原有观看来源", async
+@@ -408,16 +408,16 @@ test("TMDB tv 详情只保留注入播放器并清除原有观看来源", async
  
      const payload = JSON.parse(result.body);
      const ad = payload["watch/providers"].results.AD;
@@ -253,7 +290,7 @@ index c8319b5..62646e1 100644
      assert.equal(us.buy, undefined);
      assert.equal(us.ads, undefined);
  });
-@@ -434,8 +434,8 @@ test("TMDB movie 详情会注入 type=movie 的 deeplink", async () => {
+@@ -437,8 +437,8 @@ test("TMDB movie 详情会注入 type=movie 的 deeplink", async () => {
  
      const payload = JSON.parse(result.body);
      const us = payload["watch/providers"].results.US;
@@ -264,7 +301,7 @@ index c8319b5..62646e1 100644
  });
  
  test("TMDB 详情在自定义序号下只注入排序 1 的播放器", async () => {
-@@ -446,18 +446,18 @@ test("TMDB 详情在自定义序号下只注入排序 1 的播放器", async ()
+@@ -449,18 +449,18 @@ test("TMDB 详情在自定义序号下只注入排序 1 的播放器", async ()
              "user-agent": "Sofa Time/1.0",
          },
          argument: {
@@ -289,7 +326,7 @@ index c8319b5..62646e1 100644
  });
  
  test("TMDB 详情在部分序号为 0 时只注入序号非 0 的最前播放器", async () => {
-@@ -468,6 +468,7 @@ test("TMDB 详情在部分序号为 0 时只注入序号非 0 的最前播放器
+@@ -471,6 +471,7 @@ test("TMDB 详情在部分序号为 0 时只注入序号非 0 的最前播放器
              "user-agent": "Sofa Time/1.0",
          },
          argument: {
@@ -297,7 +334,7 @@ index c8319b5..62646e1 100644
              forwardButtonOrder: 1,
              infuseButtonOrder: 2,
          },
-@@ -487,6 +488,7 @@ test("TMDB 详情在全部序号为 0 时不注入任何播放器", async () =>
+@@ -490,6 +491,7 @@ test("TMDB 详情在全部序号为 0 时不注入任何播放器", async () =>
              "user-agent": "Sofa Time/1.0",
          },
          argument: {
@@ -305,7 +342,7 @@ index c8319b5..62646e1 100644
              forwardButtonOrder: 0,
              infuseButtonOrder: 0,
              rexButtonOrder: 0,
-@@ -509,7 +511,7 @@ test("TMDB 详情在 results 为空时为全部 REGION_CODES 注入", async () =
+@@ -512,7 +514,7 @@ test("TMDB 详情在 results 为空时为全部 REGION_CODES 注入", async () =
      const results = payload["watch/providers"].results;
      assert.equal(Object.keys(results).length, REGION_CODES.length);
      REGION_CODES.forEach((regionCode) => {
@@ -314,7 +351,7 @@ index c8319b5..62646e1 100644
          assert.equal(results[regionCode].flatrate.length, 1, `region ${regionCode} flatrate`);
      });
  });
-@@ -552,9 +554,9 @@ test("TMDB 详情 flatrate 已有旧自定义条目时也会整体清除只留
+@@ -555,9 +557,9 @@ test("TMDB 详情 flatrate 已有旧自定义条目时也会整体清除只留
          url: "https://api.themoviedb.org/3/tv/108978?api_key=x&append_to_response=watch/providers",
          body: createTmdbDetailBody({
              US: {
@@ -326,7 +363,7 @@ index c8319b5..62646e1 100644
                      { logo_path: "/prime.jpg", provider_id: 119, provider_name: "Amazon Prime Video", display_priority: 2 },
                  ],
              },
-@@ -567,7 +569,7 @@ test("TMDB 详情 flatrate 已有旧自定义条目时也会整体清除只留
+@@ -570,7 +572,7 @@ test("TMDB 详情 flatrate 已有旧自定义条目时也会整体清除只留
      const payload = JSON.parse(result.body);
      const us = payload["watch/providers"].results.US;
      assert.equal(us.flatrate.length, 1);
@@ -335,7 +372,7 @@ index c8319b5..62646e1 100644
  });
  
  test("TMDb provider catalog 会注入自定义 provider", async () => {
-@@ -582,7 +584,7 @@ test("TMDb provider catalog 会注入自定义 provider", async () => {
+@@ -585,7 +587,7 @@ test("TMDb provider catalog 会注入自定义 provider", async () => {
      const payload = JSON.parse(result.body);
      assert.deepEqual(
          payload.results.slice(0, 3).map((item) => item.provider_id),
@@ -344,7 +381,7 @@ index c8319b5..62646e1 100644
      );
      assert.ok(payload.results.some((item) => item.provider_id === 8));
      assert.equal(payload.results.filter((item) => item.provider_id === 2).length, 1);
-@@ -596,16 +598,16 @@ test("TMDb provider catalog 在自定义序号下会按序号升序重排自定
+@@ -599,16 +601,16 @@ test("TMDb provider catalog 在自定义序号下会按序号升序重排自定
              "user-agent": "Sofa Time/1.0",
          },
          argument: {
@@ -365,7 +402,7 @@ index c8319b5..62646e1 100644
      );
  });
  
-@@ -617,6 +619,7 @@ test("TMDb provider catalog 在全部序号为 0 时仍保留全部自定义 pro
+@@ -620,6 +622,7 @@ test("TMDb provider catalog 在全部序号为 0 时仍保留全部自定义 pro
              "user-agent": "Sofa Time/1.0",
          },
          argument: {
@@ -373,7 +410,7 @@ index c8319b5..62646e1 100644
              forwardButtonOrder: 0,
              infuseButtonOrder: 0,
              rexButtonOrder: 0,
-@@ -626,7 +629,7 @@ test("TMDb provider catalog 在全部序号为 0 时仍保留全部自定义 pro
+@@ -629,7 +632,7 @@ test("TMDb provider catalog 在全部序号为 0 时仍保留全部自定义 pro
      const payload = JSON.parse(result.body);
      assert.deepEqual(
          payload.results.slice(0, 3).map((item) => item.provider_id),
@@ -383,7 +420,7 @@ index c8319b5..62646e1 100644
  });
  
 diff --git a/tests/trakt_script_watchnow.test.mjs b/tests/trakt_script_watchnow.test.mjs
-index ab19163..df0b5bd 100644
+index 87acde4..245d5c8 100644
 --- a/tests/trakt_script_watchnow.test.mjs
 +++ b/tests/trakt_script_watchnow.test.mjs
 @@ -41,7 +41,7 @@ test("/users/settings 会注入 vip 标记、广告标记和 watchnow favorites"
@@ -583,11 +620,489 @@ index ab19163..df0b5bd 100644
      );
  
      const linkCache = parseUnifiedCache(persistentData).trakt.linkIds;
+diff --git a/trakt_simplified_chinese/images/eplayerx.webp b/trakt_simplified_chinese/images/eplayerx.webp
+new file mode 100644
+index 0000000000000000000000000000000000000000..daf3f42cab822c163ddbd860f66693f38da44779
+GIT binary patch
+literal 7740
+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
+U+`kT*!a}d~pBoQ1_dnJD0c4zX5&!@I
+
+literal 0
+HcmV?d00001
+
+diff --git a/trakt_simplified_chinese/images/eplayerx_logo.webp b/trakt_simplified_chinese/images/eplayerx_logo.webp
+new file mode 100644
+index 0000000000000000000000000000000000000000..fdac2b49296a29cf22f1a7d3a2544a6319ddad4f
+GIT binary patch
+literal 16830
+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
+QFU^k|fd3bN+z#;n0J2JZ$^ZZW
+
+literal 0
+HcmV?d00001
+
 diff --git a/trakt_simplified_chinese/src/argument.mjs b/trakt_simplified_chinese/src/argument.mjs
-index 30dddc0..ea0ecf2 100644
+index 2e6d5d7..3f4bf1e 100644
 --- a/trakt_simplified_chinese/src/argument.mjs
 +++ b/trakt_simplified_chinese/src/argument.mjs
-@@ -4,6 +4,7 @@ import { normalizeTranslationEngine } from "./shared/translation-engine.mjs";
+@@ -5,6 +5,7 @@ import { normalizeTranslationEngine } from "./shared/translation-engine.mjs";
  import * as commonUtils from "./utils/common.mjs";
  
  const PLAYER_BUTTON_ARGUMENT_GROUP_KEYS = {
@@ -595,7 +1110,7 @@ index 30dddc0..ea0ecf2 100644
      forwardButtonOrder: "forward",
      infuseButtonOrder: "infuse",
      rexButtonOrder: "rex",
-@@ -16,9 +17,10 @@ const ARGUMENT_FIELDS = argumentFields.map((field) => {
+@@ -17,9 +18,10 @@ const ARGUMENT_FIELDS = argumentFields.map((field) => {
  
  function createDefaultPlayerButtonOrderConfig() {
      return {
@@ -622,20 +1137,20 @@ index b03f21c..d578883 100644
      [playerDefinitions.PLAYER_TYPE.INFUSE]: 3,
      [playerDefinitions.PLAYER_TYPE.REX]: 4,
 diff --git a/trakt_simplified_chinese/src/module-manifest.mjs b/trakt_simplified_chinese/src/module-manifest.mjs
-index 8f12b0a..1044b56 100644
+index d6f5c6a..d813052 100644
 --- a/trakt_simplified_chinese/src/module-manifest.mjs
 +++ b/trakt_simplified_chinese/src/module-manifest.mjs
 @@ -8,7 +8,7 @@ const DEFAULT_BACKEND_BASE_URL = "https://proxy-modules.demojameson.de5.net";
  const metadata = {
      name: "Trakt 增强",
      description:
--        "Trakt App 各页面从英文改为简体中文，支持中文标题、简介和海报；历史页面剧集类别的已观看记录按电视剧合并；Trakt 和 SofaTime 的影片详情页添加 Forward、Infuse、Rex 跳转按钮；部分兼容其它使用了 Trakt API 的应用。",
-+        "Trakt App 各页面从英文改为简体中文，支持中文标题、简介和海报；历史页面剧集类别的已观看记录按电视剧合并；Trakt 和 SofaTime 的影片详情页添加 EplayerX、Forward、Infuse、Rex 跳转按钮；部分兼容其它使用了 Trakt API 的应用。",
+-        "Trakt App 各页面从英文改为简体中文或港台繁体，包括海报；历史页面剧集类别的已观看记录按电视剧合并；Trakt 的影片详情页添加 Forward、Infuse、Rex 跳转按钮；部分兼容其它使用了 Trakt API 的应用。",
++        "Trakt App 各页面从英文改为简体中文或港台繁体，包括海报；历史页面剧集类别的已观看记录按电视剧合并；Trakt 的影片详情页添加 EplayerX、Forward、Infuse、Rex 跳转按钮；部分兼容其它使用了 Trakt API 的应用。",
      icon: `${RAW_BASE_URL}/${TRAKT_MODULE_PATH}/images/trakt.webp`,
      homepage: REPOSITORY_URL,
      openUrl: "https://apps.apple.com/app/id1514873602",
-@@ -62,32 +62,41 @@ const argumentFields = [
-         desc: "启用后会用豆瓣翻译角色名",
+@@ -71,32 +71,41 @@ const argumentFields = [
+         desc: "启用后会将历史页面电视剧类别的观看记录按电视剧合并",
      },
      {
 -        key: "forwardButtonOrder",

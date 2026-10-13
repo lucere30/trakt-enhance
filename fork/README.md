@@ -16,7 +16,7 @@
 
 ## 定制内容
 
-1. **复原 EplayerX 跳转按钮**（`patches/0001-restore-eplayerx.patch`）：撤销上游 `0886a1d`，默认顺序 EplayerX 1 / Forward 2 / Infuse 3 / Rex 4。
+1. **复原 EplayerX 跳转按钮**（`patches/0001-restore-eplayerx.patch`）：撤销上游 `0886a1d`，默认顺序 EplayerX 1 / Forward 2 / Infuse 3 / Rex 4。上游 `ff663ca` 删掉了 EplayerX 图标（`images/eplayerx.webp`、`eplayerx_logo.webp`），这个补丁一并带回。
 2. **链接指向本仓库**（`localize.mjs`）：插件里的脚本地址、图标等从 `DemoJameson/Proxy.Modules` 改为 `lucere30/trakt-enhance`。
 3. **只翻译中文影视、中文原海报**（`patches/0002-chinese-only.patch`）：新增四个插件选项。
    - 「只翻译中文影视」（默认开启）：原始语言为中文的剧集和电影照常翻译；其他语言的文字保留 Trakt 原文（标题、简介、集数标题、预告片、评论、口碑摘要、演职员表，以及 App 自己请求的中文译名）。海报不受这个开关影响。片单名称和描述不处理。播放器跳转按钮、VIP、历史合并不受影响。
