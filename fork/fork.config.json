@@ -16,13 +16,16 @@
         ".github"
     ],
     "extraTests": [
-        "tests/trakt_translation_scope.test.mjs"
+        "tests/trakt_translation_scope.test.mjs",
+        "tests/trakt_people_search_scope.test.mjs"
     ],
     "argumentOrder": [
         "chineseOnlyTranslation",
         "translationEngine",
         "peopleTranslationEnabled",
+        "personSearchTranslationMode",
         "characterTranslationEnabled",
+        "chinesePosterEnabled",
         "posterImageMode",
         "historyEpisodesMergedByShow",
         "fakeVipEnabled",

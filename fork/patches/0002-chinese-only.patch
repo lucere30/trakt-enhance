@@ -1,87 +1,288 @@
-From a481ab10f8b4b8e9811c43e6cb4d5b057996bff1 Mon Sep 17 00:00:00 2001
-From: Claude <noreply@anthropic.com>
-Date: Wed, 30 Sep 2026 10:58:44 +0000
-Subject: [PATCH] =?UTF-8?q?feat(trakt):=20=E4=BB=85=E5=A4=84=E7=90=86?=
- =?UTF-8?q?=E4=B8=AD=E6=96=87=E5=8E=9F=E7=89=87?=
+From a1ac74308bf2bdb3f1e32bd9127dd6ef35c00ba1 Mon Sep 17 00:00:00 2001
+From: x <x@x>
+Date: Sat, 3 Oct 2026 07:05:27 +0000
+Subject: [PATCH] =?UTF-8?q?feat(trakt):=20=E5=8F=AA=E7=BF=BB=E8=AF=91?=
+ =?UTF-8?q?=E4=B8=AD=E6=96=87=E5=BD=B1=E8=A7=86=E3=80=81=E4=B8=AD=E6=96=87?=
+ =?UTF-8?q?=E5=BD=B1=E8=A7=86=E7=94=A8=E4=B8=AD=E6=96=87=E5=8E=9F=E6=B5=B7?=
+ =?UTF-8?q?=E6=8A=A5?=
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-新增插件开关「仅处理中文原片」（chineseOnlyTranslation，默认开启）：
-原始语言为中文的剧集和电影照常翻译；其他语言的内容保留 Trakt 原始响应，不做任何处理。
-
-- 列表逐条判断：非中文条目不翻译、不替换海报
-- 详情、季列表、预告片、评论（含回复）、口碑摘要、演职员表、App 自己请求的
-  /translations/zh：非中文原片原样放行
-- 片单名称和描述不处理
-- 新增开关「人物页翻译」（peopleTranslationEnabled，默认开启）：
-  控制人物页、人物搜索在该模式下是否翻译
-- 播放器跳转、VIP、历史合并等非翻译功能不受影响；季列表放行前仍缓存集 ID
-原始语言取自响应的 language 字段并记录在本地，未知时请求一次详情，仍未知按中文处理。
+新增开关「只翻译中文影视」（默认开启）：只翻译原始语言为中文的剧集和电影，
+其他语言的标题、简介、集数、评论、演职员等保留 Trakt 原文。
+新增开关「中文影视用中文原海报」（默认开启）：中文影视固定按原片语言取
+TMDb 中文海报（优先原产地区版本），其他影视按「海报语言」。
+另加「人物页翻译」开关和四档「人物搜索翻译」（全部翻译 / 华人和日韩名 /
+仅华人名 / 关闭），两者单独生效、不依赖「只翻译中文影视」：按 TMDb 中文名
+是否带间隔号、出生地是否在日韩判断，判定结果记在本地。
+本地记录（影视语言、评论、出生地）共用 shared/fork-store.mjs，遵守调试模式
+的「禁用本地缓存」；详情里没有语言的影视记「未知」7 天，期间不再补查。
+粤语片（cn）同时接受 zh 海报。脚本自己发起的详情请求带标记请求头，响应
+阶段原样放行。
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01YH4kK6jKSf8gmN4WbmGa5W
+Claude-Session: https://claude.ai/code/session_01DtU3uiPj2Ju7W28SiDKqsk
 ---
- tests/helpers/trakt-test-helpers.mjs          |   3 +
- tests/trakt_translation_scope.test.mjs        | 303 +++++++++++++++++
+ tests/helpers/run-script.mjs                  |   1 +
+ tests/helpers/trakt-test-helpers.mjs          |   5 +
+ tests/trakt_people_search_scope.test.mjs      | 164 ++++
+ tests/trakt_translation_scope.test.mjs        | 710 ++++++++++++++++++
  .../src/features/comments-translation.mjs     |   9 +-
- .../src/features/media-translation.mjs        |  29 ++
- .../src/module-manifest.mjs                   |  14 +
- trakt_simplified_chinese/src/response.mjs     |   7 +-
- .../src/shared/trakt-translation-helper.mjs   |  14 +-
- .../src/shared/translation-scope.mjs          | 313 ++++++++++++++++++
- 8 files changed, 684 insertions(+), 8 deletions(-)
+ .../src/features/media-translation.mjs        |  60 +-
+ .../src/features/people-search-scope.mjs      | 209 ++++++
+ .../src/module-manifest.mjs                   |  32 +-
+ .../src/outbound/trakt-api-client.mjs         |  19 +-
+ trakt_simplified_chinese/src/response.mjs     |  17 +-
+ .../src/shared/fork-store.mjs                 |  73 ++
+ .../src/shared/media-image-replacement.mjs    |  49 +-
+ .../src/shared/trakt-translation-helper.mjs   |  17 +-
+ .../src/shared/translation-scope.mjs          | 373 +++++++++
+ trakt_simplified_chinese/src/utils/cache.mjs  |   1 +
+ 15 files changed, 1707 insertions(+), 32 deletions(-)
+ create mode 100644 tests/trakt_people_search_scope.test.mjs
  create mode 100644 tests/trakt_translation_scope.test.mjs
+ create mode 100644 trakt_simplified_chinese/src/features/people-search-scope.mjs
+ create mode 100644 trakt_simplified_chinese/src/shared/fork-store.mjs
  create mode 100644 trakt_simplified_chinese/src/shared/translation-scope.mjs
 
+diff --git a/tests/helpers/run-script.mjs b/tests/helpers/run-script.mjs
+index 0a19669..4aba680 100644
+--- a/tests/helpers/run-script.mjs
++++ b/tests/helpers/run-script.mjs
+@@ -164,6 +164,7 @@ function runScript({
+                     httpLogs.push({
+                         method: "GET",
+                         url: String(options.url ?? ""),
++                        headers: options.headers,
+                     });
+                     const mock = resolveHttpMock(httpGetMocks, String(options.url ?? ""));
+                     if (mock) {
 diff --git a/tests/helpers/trakt-test-helpers.mjs b/tests/helpers/trakt-test-helpers.mjs
-index 258c774..b10c20e 100644
+index 258c774..37badb7 100644
 --- a/tests/helpers/trakt-test-helpers.mjs
 +++ b/tests/helpers/trakt-test-helpers.mjs
 @@ -279,6 +279,7 @@ function createWrappedMovieBody() {
  
  // 测试默认引擎固定为 deeplx，复用既有 DeepLX mock 断言，避免 39 个集成测试因默认引擎改为 google 而失效。
  // 需要验证 google 默认引擎的用例在 argument 中显式指定 translationEngine: "google" 并 mock translate-pa 端点。
-+// “仅处理中文原片”同理固定为关闭（上游行为）；验证该功能的用例显式传 chineseOnlyTranslation: true。
++// “只翻译中文影视”“中文影视用中文原海报”同理固定为关闭（上游行为）；验证这些功能的用例显式传 true。
  function runResponseCase(input) {
      const { argument, headers, ...rest } = input ?? {};
      return runScript({
-@@ -286,6 +287,7 @@ function runResponseCase(input) {
+@@ -286,6 +287,8 @@ function runResponseCase(input) {
          ...rest,
          argument: {
              translationEngine: "deeplx",
 +            chineseOnlyTranslation: false,
++            chinesePosterEnabled: false,
              ...argument,
          },
          headers: {
-@@ -302,6 +304,7 @@ function runRequestCase(input) {
+@@ -302,6 +305,8 @@ function runRequestCase(input) {
          ...rest,
          argument: {
              translationEngine: "deeplx",
 +            chineseOnlyTranslation: false,
++            chinesePosterEnabled: false,
              ...argument,
          },
      });
+diff --git a/tests/trakt_people_search_scope.test.mjs b/tests/trakt_people_search_scope.test.mjs
+new file mode 100644
+index 0000000..f145aea
+--- /dev/null
++++ b/tests/trakt_people_search_scope.test.mjs
+@@ -0,0 +1,164 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++
++import { isEastAsianName, normalizePersonSearchMode, resolveRegionFromBirthplace } from "../trakt_simplified_chinese/src/features/people-search-scope.mjs";
++
++import { createUnifiedPersistentData, runResponseCase } from "./helpers/trakt-test-helpers.mjs";
++
++// 本分支上游的脚本内置 TMDb key（与上游测试一致）
++const TEST_TMDB_API_KEY = "a0a4d50000eeb10604c5f9342c8b3f62";
++
++const ON = { chineseOnlyTranslation: true };
++const REGION_STORE_KEY = "dj_trakt_fork_person_region";
++
++// 数据取自 TMDb 实际页面：中文名、出生地写法
++const PEOPLE = {
++    chow: { trakt: 1001, tmdb: 57607, name: "Stephen Chow", zh: "周星驰", birth: "Hong Kong, British Crown Colony [now China]" },
++    wu: { trakt: 1002, tmdb: 64436, name: "Daniel Wu", zh: "吴彦祖", birth: "Berkeley, California, USA" },
++    kimura: { trakt: 1003, tmdb: 12670, name: "Takuya Kimura", zh: "木村拓哉", birth: "Chiba, Chiba, Japan" },
++    song: { trakt: 1004, tmdb: 20738, name: "Song Kang-ho", zh: "宋康昊", birth: "Gimhae, South Gyeongsang, South Korea" },
++    hanks: { trakt: 1005, tmdb: 31, name: "Tom Hanks", zh: "汤姆·汉克斯", birth: "Concord, California, USA" },
++    nobody: { trakt: 1006, tmdb: 999, name: "Some Extra", zh: "", birth: "" },
++};
++
++function personUrl(tmdbId) {
++    return `https://api.tmdb.org/3/person/${tmdbId}?language=zh-CN&api_key=${TEST_TMDB_API_KEY}`;
++}
++
++function createTmdbPersonMocks(keys) {
++    return Object.fromEntries(
++        keys.map((key) => {
++            const p = PEOPLE[key];
++            return [personUrl(p.tmdb), { status: 200, body: JSON.stringify({ id: p.tmdb, name: p.zh || p.name, place_of_birth: p.birth || null }) }];
++        }),
++    );
++}
++
++function createSearchBody(keys) {
++    return JSON.stringify(keys.map((key) => ({ type: "person", score: 1, person: { name: PEOPLE[key].name, ids: { trakt: PEOPLE[key].trakt, tmdb: PEOPLE[key].tmdb } } })));
++}
++
++function namesOf(result) {
++    return JSON.parse(result.body).map((item) => item.person.name);
++}
++
++function isTmdbPersonRequest(log) {
++    return /api\.tmdb\.org\/3\/person\//.test(log.url);
++}
++
++function isMachineTranslationRequest(log) {
++    return /translate|deepl/i.test(log.url);
++}
++
++const ALL_KEYS = ["chow", "wu", "kimura", "song", "hanks", "nobody"];
++
++test("判定规则：中文名不带间隔号才算华人/日韩名；出生地在日本、韩国的算日韩", () => {
++    assert.equal(isEastAsianName("周星驰"), true);
++    assert.equal(isEastAsianName("木村拓哉"), true);
++    assert.equal(isEastAsianName("汤姆·汉克斯"), false);
++    assert.equal(isEastAsianName("汤姆・汉克斯"), false);
++    assert.equal(isEastAsianName("Tom Hanks"), false);
++    assert.equal(isEastAsianName(""), false);
++
++    assert.equal(resolveRegionFromBirthplace("Tokyo, Japan"), "jk");
++    assert.equal(resolveRegionFromBirthplace("Seoul, South Korea"), "jk");
++    assert.equal(resolveRegionFromBirthplace("日本东京"), "jk");
++    assert.equal(resolveRegionFromBirthplace("Hong Kong, British Crown Colony [now China]"), "c");
++    assert.equal(resolveRegionFromBirthplace("臺灣屏東縣潮州鎮"), "c");
++    assert.equal(resolveRegionFromBirthplace("Berkeley, California, USA"), "c");
++    assert.equal(resolveRegionFromBirthplace(null), "c");
++});
++
++test("档位：Loon 传中文选项名、BoxJs 传英文值都能识别，未知值按全部翻译", () => {
++    assert.equal(normalizePersonSearchMode("华人和日韩名"), "eastAsian");
++    assert.equal(normalizePersonSearchMode("仅华人名"), "chinese");
++    assert.equal(normalizePersonSearchMode("关闭"), "off");
++    assert.equal(normalizePersonSearchMode("chinese"), "chinese");
++    assert.equal(normalizePersonSearchMode("xx"), "all");
++    assert.equal(normalizePersonSearchMode(undefined), "all");
++});
++
++test("华人和日韩名：华人、日本、韩国演员翻译，音译名和没有中文名的人保留原文，名字不调用机器翻译", async () => {
++    const { result, httpLogs } = await runResponseCase({
++        url: "https://api.trakt.tv/search/person?query=x",
++        body: createSearchBody(ALL_KEYS),
++        argument: { ...ON, personSearchTranslationMode: "华人和日韩名" },
++        httpGetMocks: createTmdbPersonMocks(ALL_KEYS),
++        persistentData: createUnifiedPersistentData(),
++    });
++
++    assert.deepEqual(namesOf(result), ["周星驰", "吴彦祖", "木村拓哉", "宋康昊", "Tom Hanks", "Some Extra"]);
++    assert.equal(httpLogs.some(isMachineTranslationRequest), false);
++});
++
++test("仅华人名：排除出生在日本、韩国的人，海外出生的华裔照常翻译", async () => {
++    const { result } = await runResponseCase({
++        url: "https://api.trakt.tv/search/person?query=x",
++        body: createSearchBody(ALL_KEYS),
++        argument: { ...ON, personSearchTranslationMode: "仅华人名" },
++        httpGetMocks: createTmdbPersonMocks(ALL_KEYS),
++        persistentData: createUnifiedPersistentData(),
++    });
++
++    assert.deepEqual(namesOf(result), ["周星驰", "吴彦祖", "Takuya Kimura", "Song Kang-ho", "Tom Hanks", "Some Extra"]);
++});
++
++test("判定结果记在本地：第二次搜同样的人不再请求 TMDb", async () => {
++    const first = await runResponseCase({
++        url: "https://api.trakt.tv/search/person?query=x",
++        body: createSearchBody(ALL_KEYS),
++        argument: { ...ON, personSearchTranslationMode: "chinese" },
++        httpGetMocks: createTmdbPersonMocks(ALL_KEYS),
++        persistentData: createUnifiedPersistentData(),
++    });
++    assert.equal(first.httpLogs.filter(isTmdbPersonRequest).length, ALL_KEYS.length);
++    const regions = JSON.parse(first.persistentData[REGION_STORE_KEY]);
++    assert.equal(regions[String(PEOPLE.kimura.trakt)], "jk");
++    assert.equal(regions[String(PEOPLE.chow.trakt)], "c");
++
++    const second = await runResponseCase({
++        url: "https://api.trakt.tv/search/person?query=x",
++        body: createSearchBody(ALL_KEYS),
++        argument: { ...ON, personSearchTranslationMode: "chinese" },
++        persistentData: first.persistentData,
++    });
++    assert.equal(second.httpLogs.filter(isTmdbPersonRequest).length, 0);
++    assert.deepEqual(namesOf(second.result), ["周星驰", "吴彦祖", "Takuya Kimura", "Song Kang-ho", "Tom Hanks", "Some Extra"]);
++});
++
++test("本月生日人物列表同样按档位处理", async () => {
++    const body = JSON.stringify(["chow", "hanks"].map((key) => ({ name: PEOPLE[key].name, ids: { trakt: PEOPLE[key].trakt, tmdb: PEOPLE[key].tmdb } })));
++    const { result } = await runResponseCase({
++        url: "https://api.trakt.tv/people/this_month",
++        body,
++        argument: { ...ON, personSearchTranslationMode: "eastAsian" },
++        httpGetMocks: createTmdbPersonMocks(["chow", "hanks"]),
++        persistentData: createUnifiedPersistentData(),
++    });
++    assert.deepEqual(
++        JSON.parse(result.body).map((item) => item.name),
++        ["周星驰", "Tom Hanks"],
++    );
++});
++
++test("只翻译中文影视关闭时，华人和日韩名档照样生效", async () => {
++    const { result } = await runResponseCase({
++        url: "https://api.trakt.tv/search/person?query=x",
++        body: createSearchBody(["chow", "hanks"]),
++        argument: { chineseOnlyTranslation: false, personSearchTranslationMode: "eastAsian" },
++        httpGetMocks: createTmdbPersonMocks(["chow", "hanks"]),
++        persistentData: createUnifiedPersistentData(),
++    });
++    assert.deepEqual(namesOf(result), ["周星驰", "Tom Hanks"]);
++});
++
++test("调试模式禁用本地缓存时，不写出生地记录", async () => {
++    const { persistentData } = await runResponseCase({
++        url: "https://api.trakt.tv/search/person?query=x",
++        body: createSearchBody(["kimura"]),
++        argument: { ...ON, personSearchTranslationMode: "chinese", debugMode: "disableLocal" },
++        httpGetMocks: createTmdbPersonMocks(["kimura"]),
++        persistentData: createUnifiedPersistentData(),
++    });
++    assert.equal(persistentData[REGION_STORE_KEY], undefined);
++});
 diff --git a/tests/trakt_translation_scope.test.mjs b/tests/trakt_translation_scope.test.mjs
 new file mode 100644
-index 0000000..acacba8
+index 0000000..beb33f9
 --- /dev/null
 +++ b/tests/trakt_translation_scope.test.mjs
-@@ -0,0 +1,303 @@
+@@ -0,0 +1,710 @@
 +import assert from "node:assert/strict";
 +import test from "node:test";
 +
 +import { isChineseLanguage } from "../trakt_simplified_chinese/src/shared/translation-scope.mjs";
 +
 +import {
++    createHttpErrorMock,
 +    createMediaTranslationCache,
 +    createMediaTranslationEntry,
 +    createPeopleTranslationCache,
++    createTmdbImagesResponse,
 +    createUnifiedPersistentData,
 +    parseUnifiedCache,
 +    readFixture,
 +    runResponseCase,
 +} from "./helpers/trakt-test-helpers.mjs";
++
++// 本分支上游的脚本内置 TMDb key（与上游测试一致）
++const TEST_TMDB_API_KEY = "a0a4d50000eeb10604c5f9342c8b3f62";
 +
 +const LANGUAGE_STORE_KEY = "dj_trakt_fork_media_language";
 +const ON = { chineseOnlyTranslation: true };
@@ -98,6 +299,12 @@ index 0000000..acacba8
 +
 +function readLanguageStore(persistentData) {
 +    return JSON.parse(String(persistentData?.[LANGUAGE_STORE_KEY] ?? "{}"));
++}
++
++const COMMENT_STORE_KEY = "dj_trakt_fork_comment_scope";
++
++function readCommentStore(persistentData) {
++    return JSON.parse(String(persistentData?.[COMMENT_STORE_KEY] ?? "{}"));
 +}
 +
 +function hasTranslationRequest(httpLogs) {
@@ -169,7 +376,7 @@ index 0000000..acacba8
 +    "episode:11:1:3": createMediaTranslationEntry({ translation: { title: "英语剧第三集" } }),
 +};
 +
-+test("列表里只处理中文剧集，其他语言条目与 Trakt 返回完全一致", async () => {
++test("列表里只翻译中文剧集，其他语言条目（无 TMDb 海报可换时）与 Trakt 返回完全一致", async () => {
 +    const items = createWatchlistItems();
 +    const { result } = await runResponseCase({
 +        url: "https://api.trakt.tv/users/me/watchlist",
@@ -185,7 +392,7 @@ index 0000000..acacba8
 +    assert.deepEqual(payload[3], items[3]);
 +});
 +
-+test("关闭“仅处理中文原片”时与上游一致，所有条目都翻译", async () => {
++test("关闭“只翻译中文影视”时与上游一致，所有条目都翻译", async () => {
 +    const { result } = await runResponseCase({
 +        url: "https://api.trakt.tv/users/me/watchlist",
 +        body: JSON.stringify(createWatchlistItems()),
@@ -237,7 +444,7 @@ index 0000000..acacba8
 +    assert.equal(JSON.parse(result.body)[0].show.title, "未知剧中文名");
 +});
 +
-+test("英语剧集的季列表原样放行，但仍缓存集 ID 供播放器跳转按钮使用", async () => {
++test("英语剧集的季列表不翻译（无季海报可换时原样放行），但仍缓存集 ID 供播放器跳转按钮使用", async () => {
 +    const { result, httpLogs, persistentData } = await runResponseCase({
 +        url: "https://api.trakt.tv/shows/555/seasons?extended=episodes,full",
 +        body: readFixture("season-list.json"),
@@ -305,7 +512,12 @@ index 0000000..acacba8
 +        persistentData: createPersistentData({}, languages),
 +    });
 +    assertPassThrough(first.result);
-+    assert.equal(readLanguageStore(first.persistentData)["comment:9001"], "-");
++    assert.equal(readCommentStore(first.persistentData)["9001"], "-");
++    // 评论记录和语言记录分开存放，不占语言记录的名额
++    assert.equal(
++        Object.keys(readLanguageStore(first.persistentData)).some((key) => key.startsWith("comment:")),
++        false,
++    );
 +
 +    const replies = await runResponseCase({
 +        url: "https://api.trakt.tv/comments/9001/replies",
@@ -324,7 +536,53 @@ index 0000000..acacba8
 +    }
 +});
 +
-+test("人物页翻译开关：关闭时人物页、人物搜索原样放行", async () => {
++const PERSON_SEARCH_BODY = JSON.stringify([{ type: "person", score: 1, person: { name: "Tom Hanks", ids: { trakt: 42, slug: "tom-hanks", tmdb: 31 } } }]);
++
++test("人物页翻译开关：关闭时只放行人物页，人物搜索照常翻译", async () => {
++    const page = await runResponseCase({
++        url: "https://api.trakt.tv/people/tom-hanks",
++        body: readFixture("people-detail.json"),
++        argument: { ...ON, peopleTranslationEnabled: false },
++        persistentData: createPersistentData(),
++    });
++    assertPassThrough(page.result);
++    assert.equal(hasTranslationRequest(page.httpLogs), false);
++
++    for (const url of ["https://api.trakt.tv/search/person?query=tom", "https://api.trakt.tv/people/this_month"]) {
++        const { result } = await runResponseCase({
++            url,
++            body: PERSON_SEARCH_BODY,
++            argument: { ...ON, peopleTranslationEnabled: false },
++            persistentData: createUnifiedPersistentData({ googlePeople: JSON.parse(createPeopleTranslationCache()) }),
++        });
++        assert.notEqual(result.body, undefined, url);
++        assert.match(JSON.parse(result.body)[0].person.name, /汤姆·汉克斯/, url);
++    }
++});
++
++test("人物搜索翻译开关：关闭时只放行人物搜索和本月生日人物，人物页照常翻译", async () => {
++    for (const url of ["https://api.trakt.tv/search/person?query=tom", "https://api.trakt.tv/people/this_month"]) {
++        const { result, httpLogs } = await runResponseCase({
++            url,
++            body: readFixture("media-people-list.json"),
++            argument: { ...ON, personSearchTranslationMode: "off" },
++            persistentData: createPersistentData(),
++        });
++        assertPassThrough(result);
++        assert.equal(hasTranslationRequest(httpLogs), false, url);
++    }
++
++    const { result } = await runResponseCase({
++        url: "https://api.trakt.tv/people/42",
++        body: readFixture("people-detail.json"),
++        argument: { ...ON, personSearchTranslationMode: "off" },
++        persistentData: createUnifiedPersistentData({ googlePeople: JSON.parse(createPeopleTranslationCache()) }),
++    });
++    assert.notEqual(result.body, undefined);
++    assert.match(JSON.parse(result.body).name, /汤姆·汉克斯/);
++});
++
++test("两个人物开关都关闭时人物页、人物搜索都原样放行", async () => {
 +    const cases = [
 +        { url: "https://api.trakt.tv/people/tom-hanks", fixture: "people-detail.json" },
 +        { url: "https://api.trakt.tv/search/person?query=tom", fixture: "media-people-list.json" },
@@ -334,7 +592,7 @@ index 0000000..acacba8
 +        const { result, httpLogs } = await runResponseCase({
 +            url,
 +            body: readFixture(fixture),
-+            argument: { ...ON, peopleTranslationEnabled: false },
++            argument: { ...ON, peopleTranslationEnabled: false, personSearchTranslationMode: "off" },
 +            persistentData: createPersistentData(),
 +        });
 +        assertPassThrough(result);
@@ -354,7 +612,7 @@ index 0000000..acacba8
 +    assert.match(JSON.parse(result.body).name, /汤姆·汉克斯/);
 +});
 +
-+test("最近评论列表只处理中文原片条目，英语条目保持原样并记住评论", async () => {
++test("最近评论列表只翻译中文影视条目，英语条目保持原样并记住评论", async () => {
 +    const items = [
 +        { movie: { title: "English Movie", language: "en", ids: { trakt: 123 } }, comment: { id: 7001, language: "en", comment: "Nice" } },
 +        { movie: { title: "Chinese Movie", language: "zh", ids: { trakt: 456 } }, comment: { id: 7002, language: "zh", comment: "很好" } },
@@ -369,7 +627,352 @@ index 0000000..acacba8
 +    const payload = JSON.parse(result.body);
 +    assert.deepEqual(payload[0], items[0]);
 +    assert.equal(payload[1].movie.title, "中文电影名");
-+    assert.equal(readLanguageStore(persistentData)["comment:7001"], "-");
++    assert.equal(readCommentStore(persistentData)["7001"], "-");
++});
++
++// ---------- 海报：所有影视都按「海报语言」处理（与原插件一致） ----------
++
++const TMDB_MOVIE_IMAGES_URL = `https://api.tmdb.org/3/movie/456/images?language=zh%2Cen&api_key=${TEST_TMDB_API_KEY}`;
++const TRAKT_POSTER = "https://walter.trakt.tv/images/movies/000/000/123/posters/original.jpg";
++const TMDB_CN_POSTER = "https://image.tmdb.org/t/p/w780/cn-poster.jpg";
++
++function createMovie(overrides = {}) {
++    return {
++        title: "Original Movie",
++        overview: "Original Overview",
++        ids: { trakt: 123, tmdb: 456 },
++        language: "en",
++        country: "us",
++        available_translations: ["en", "zh"],
++        images: { poster: [TRAKT_POSTER] },
++        ...overrides,
++    };
++}
++
++function createChinesePosterMock() {
++    return { [TMDB_MOVIE_IMAGES_URL]: createTmdbImagesResponse([{ iso_639_1: "zh", iso_3166_1: "CN", file_path: "/cn-poster.jpg", vote_average: 8, vote_count: 20 }]) };
++}
++
++test("英语电影详情：文字保留原文，海报按「海报语言=中文」换成中文海报", async () => {
++    const { result, httpLogs } = await runResponseCase({
++        url: "https://api.trakt.tv/movies/123",
++        body: JSON.stringify(createMovie()),
++        argument: { ...ON, posterImageMode: "chinese" },
++        httpGetMocks: createChinesePosterMock(),
++        persistentData: createPersistentData({ "movie:123": createMediaTranslationEntry({ translation: { title: "中文标题", overview: "中文简介" } }) }),
++    });
++
++    const payload = JSON.parse(result.body);
++    assert.equal(payload.title, "Original Movie");
++    assert.equal(payload.overview, "Original Overview");
++    assert.equal(payload.images.poster[0], TMDB_CN_POSTER);
++    assert.equal(hasTranslationRequest(httpLogs), false);
++});
++
++test("列表里的英语电影：文字保留原文，海报按「海报语言=中文」换成中文海报", async () => {
++    const { result } = await runResponseCase({
++        url: "https://api.trakt.tv/users/me/watchlist",
++        body: JSON.stringify([{ type: "movie", movie: createMovie() }]),
++        argument: { ...ON, posterImageMode: "chinese" },
++        httpGetMocks: createChinesePosterMock(),
++        persistentData: createPersistentData({ "movie:123": createMediaTranslationEntry({ translation: { title: "中文标题" } }) }),
++    });
++
++    const payload = JSON.parse(result.body);
++    assert.equal(payload[0].movie.title, "Original Movie");
++    assert.equal(payload[0].movie.images.poster[0], TMDB_CN_POSTER);
++});
++
++test("中文电影详情：关闭「中文影视用中文原海报」且「海报语言=原图」时保留 Trakt 海报", async () => {
++    const { result, httpLogs } = await runResponseCase({
++        url: "https://api.trakt.tv/movies/123",
++        body: JSON.stringify(createMovie({ language: "zh", country: "cn" })),
++        argument: { ...ON, posterImageMode: "default" },
++        persistentData: createPersistentData({ "movie:123": createMediaTranslationEntry({ translation: { title: "中文标题", overview: "中文简介", tagline: "中文标语" } }) }),
++    });
++
++    const payload = JSON.parse(result.body);
++    assert.equal(payload.title, "中文标题");
++    assert.equal(payload.images.poster[0], TRAKT_POSTER);
++    assert.equal(
++        httpLogs.some((log) => log.url.startsWith("https://api.tmdb.org/3/")),
++        false,
++    );
++});
++
++// ---------- 中文影视用中文原海报 ----------
++
++const POSTER_ON = { ...ON, chinesePosterEnabled: true };
++const TMDB_MOVIE_789_ZH_IMAGES_URL = `https://api.tmdb.org/3/movie/789/images?language=zh&api_key=${TEST_TMDB_API_KEY}`;
++const TMDB_TW_POSTER = "https://image.tmdb.org/t/p/w780/tw-poster.jpg";
++const TRAKT_POSTER_789 = "https://walter.trakt.tv/images/movies/000/000/789/posters/original.jpg";
++
++function createTaiwanMovie() {
++    return createMovie({
++        title: "Taiwan Movie",
++        ids: { trakt: 789, tmdb: 789 },
++        language: "zh",
++        country: "tw",
++        images: { poster: [TRAKT_POSTER_789] },
++    });
++}
++
++function createTaiwanPosterMock() {
++    return {
++        [TMDB_MOVIE_789_ZH_IMAGES_URL]: createTmdbImagesResponse([
++            { iso_639_1: "zh", iso_3166_1: "CN", file_path: "/cn-poster.jpg", vote_average: 9, vote_count: 50 },
++            { iso_639_1: "zh", iso_3166_1: "TW", file_path: "/tw-poster.jpg", vote_average: 5, vote_count: 5 },
++        ]),
++    };
++}
++
++function isImageRequest(log) {
++    return log.url.startsWith("https://api.tmdb.org/3/") || log.url.includes("/images");
++}
++
++test("中文原海报开启 +「海报语言=原图」：台湾电影详情用原产地区（台版）中文海报", async () => {
++    const { result } = await runResponseCase({
++        url: "https://api.trakt.tv/movies/789",
++        body: JSON.stringify(createTaiwanMovie()),
++        argument: { ...POSTER_ON, posterImageMode: "default" },
++        httpGetMocks: createTaiwanPosterMock(),
++        persistentData: createPersistentData({ "movie:789": createMediaTranslationEntry({ translation: { title: "台湾电影" } }) }),
++    });
++
++    const payload = JSON.parse(result.body);
++    assert.equal(payload.title, "台湾电影");
++    assert.equal(payload.images.poster[0], TMDB_TW_POSTER);
++});
++
++test("中文原海报开启 +「海报语言=原图」：英语电影详情原样放行，不请求任何海报", async () => {
++    const { result, httpLogs } = await runResponseCase({
++        url: "https://api.trakt.tv/movies/123",
++        body: JSON.stringify(createMovie()),
++        argument: { ...POSTER_ON, posterImageMode: "default" },
++        httpGetMocks: createChinesePosterMock(),
++    });
++
++    assert.equal(result.body, undefined);
++    assert.equal(httpLogs.some(isImageRequest), false);
++});
++
++test("中文原海报开启 +「海报语言=原图」：列表里只给中文电影换海报，英语电影不请求海报", async () => {
++    const { result, httpLogs } = await runResponseCase({
++        url: "https://api.trakt.tv/users/me/watchlist",
++        body: JSON.stringify([
++            { type: "movie", movie: createMovie() },
++            { type: "movie", movie: createTaiwanMovie() },
++        ]),
++        argument: { ...POSTER_ON, posterImageMode: "default" },
++        httpGetMocks: { ...createChinesePosterMock(), ...createTaiwanPosterMock() },
++    });
++
++    const payload = JSON.parse(result.body);
++    assert.equal(payload[0].movie.images.poster[0], TRAKT_POSTER);
++    assert.equal(payload[1].movie.images.poster[0], TMDB_TW_POSTER);
++    assert.equal(
++        httpLogs.some((log) => log.url.includes("/movie/456/")),
++        false,
++    );
++});
++
++test("中文原海报开启 +「海报语言=中文」：同一列表里英语电影用中文海报，台湾电影用台版海报", async () => {
++    const { result } = await runResponseCase({
++        url: "https://api.trakt.tv/users/me/watchlist",
++        body: JSON.stringify([
++            { type: "movie", movie: createMovie() },
++            { type: "movie", movie: createTaiwanMovie() },
++        ]),
++        argument: { ...POSTER_ON, posterImageMode: "chinese" },
++        httpGetMocks: { ...createChinesePosterMock(), ...createTaiwanPosterMock() },
++    });
++
++    const payload = JSON.parse(result.body);
++    assert.equal(payload[0].movie.images.poster[0], TMDB_CN_POSTER);
++    assert.equal(payload[1].movie.images.poster[0], TMDB_TW_POSTER);
++});
++
++test("中文原海报关闭 +「海报语言=中文」：台湾电影和原插件一样优先大陆版海报", async () => {
++    const { result } = await runResponseCase({
++        url: "https://api.trakt.tv/movies/789",
++        body: JSON.stringify(createTaiwanMovie()),
++        argument: { ...ON, posterImageMode: "chinese" },
++        httpGetMocks: createTaiwanPosterMock(),
++    });
++
++    assert.equal(JSON.parse(result.body).images.poster[0], "https://image.tmdb.org/t/p/w780/cn-poster.jpg");
++});
++
++test("旧版本存在语言记录里的评论记录会被清掉", async () => {
++    const { persistentData } = await runResponseCase({
++        url: "https://api.trakt.tv/movies/123",
++        body: JSON.stringify(createMovie({ images: {} })),
++        argument: ON,
++        persistentData: createPersistentData({}, { "comment:1": "-", "comment:2": "-", "show:9": "ja" }),
++    });
++
++    const store = readLanguageStore(persistentData);
++    assert.equal(store["comment:1"], undefined);
++    assert.equal(store["comment:2"], undefined);
++    assert.equal(store["show:9"], "ja");
++    assert.equal(store["movie:123"], "en");
++});
++
++// ---------- 粤语片（TMDb 语言代码 cn） ----------
++
++test("粤语片（language=cn）开启中文原海报时也能用上标为 zh 的港版中文海报", async () => {
++    const { result, httpLogs } = await runResponseCase({
++        url: "https://api.trakt.tv/movies/789",
++        body: JSON.stringify(createMovie({ title: "HK Movie", ids: { trakt: 789, tmdb: 789 }, language: "cn", country: "hk", images: { poster: [TRAKT_POSTER_789] } })),
++        argument: { ...POSTER_ON, posterImageMode: "default" },
++        httpGetMocks: {
++            [`https://api.tmdb.org/3/movie/789/images?language=zh%2Ccn&api_key=${TEST_TMDB_API_KEY}`]: createTmdbImagesResponse([
++                { iso_639_1: "zh", iso_3166_1: "CN", file_path: "/cn-poster.jpg", vote_average: 9, vote_count: 50 },
++                { iso_639_1: "zh", iso_3166_1: "HK", file_path: "/hk-poster.jpg", vote_average: 5, vote_count: 5 },
++            ]),
++        },
++    });
++
++    assert.equal(
++        httpLogs.some((log) => log.url.includes("/movie/789/images?language=zh%2Ccn")),
++        true,
++    );
++    assert.equal(JSON.parse(result.body).images.poster[0], "https://image.tmdb.org/t/p/w780/hk-poster.jpg");
++});
++
++// ---------- 脚本自己发起的详情请求 ----------
++
++test("带脚本详情请求头的详情响应原样放行，不翻译、不换海报、不发请求", async () => {
++    const { result, httpLogs } = await runResponseCase({
++        url: "https://api.trakt.tv/movies/789?extended=cloud9,full,watchnow",
++        body: JSON.stringify(createTaiwanMovie()),
++        headers: { "x-script-trakt-detail-request": "true" },
++        argument: { ...POSTER_ON, posterImageMode: "chinese" },
++        httpGetMocks: createTaiwanPosterMock(),
++        persistentData: createPersistentData({ "movie:789": createMediaTranslationEntry({ translation: { title: "台湾电影" } }) }),
++    });
++
++    assert.equal(result.body, undefined);
++    assert.equal(httpLogs.length, 0);
++});
++
++test("列表补查语言时发出的详情请求带脚本请求头", async () => {
++    const { httpLogs } = await runResponseCase({
++        url: "https://api.trakt.tv/users/me/watchlist",
++        body: JSON.stringify([{ type: "show", show: { title: "Unknown Show", ids: { trakt: 555 } } }]),
++        argument: ON,
++        httpGetMocks: {
++            "https://api.trakt.tv/shows/555?extended=cloud9,full,watchnow": { status: 200, body: JSON.stringify({ title: "Unknown Show", language: "ja", ids: { trakt: 555 } }) },
++        },
++    });
++
++    const detailRequest = httpLogs.find((log) => log.url.startsWith("https://api.trakt.tv/shows/555?"));
++    assert.ok(detailRequest);
++    assert.equal(detailRequest.headers["x-script-trakt-detail-request"], "true");
++});
++
++// ---------- 语言为空的影视记「未知」 ----------
++
++const UNKNOWN_SHOW_BODY = JSON.stringify([{ type: "show", show: { title: "No Language Show", ids: { trakt: 66 } } }]);
++const UNKNOWN_SHOW_DETAIL_URL = "https://api.trakt.tv/shows/66?extended=cloud9,full,watchnow";
++
++test("详情里没有语言时记「未知」：照常翻译，7 天内不再补查", async () => {
++    const translations = { "show:66": createMediaTranslationEntry({ translation: { title: "无语言剧中文名" } }) };
++    const first = await runResponseCase({
++        url: "https://api.trakt.tv/users/me/watchlist",
++        body: UNKNOWN_SHOW_BODY,
++        argument: ON,
++        httpGetMocks: { [UNKNOWN_SHOW_DETAIL_URL]: JSON.stringify({ title: "No Language Show", language: null, ids: { trakt: 66 } }) },
++        persistentData: createPersistentData(translations),
++    });
++    assert.equal(first.httpLogs.filter((log) => log.url === UNKNOWN_SHOW_DETAIL_URL).length, 1);
++    assert.equal(JSON.parse(first.result.body)[0].show.title, "无语言剧中文名");
++    const mark = readLanguageStore(first.persistentData)["show:66"];
++    assert.match(mark, /^\?\d+$/);
++    const expiresInDays = (Number(mark.slice(1)) * 1000 - Date.now()) / 86400000;
++    assert.ok(expiresInDays > 6.9 && expiresInDays <= 7.01, `expires in ${expiresInDays} days`);
++
++    const second = await runResponseCase({
++        url: "https://api.trakt.tv/users/me/watchlist",
++        body: UNKNOWN_SHOW_BODY,
++        argument: ON,
++        persistentData: first.persistentData,
++    });
++    assert.equal(second.httpLogs.filter((log) => log.url === UNKNOWN_SHOW_DETAIL_URL).length, 0);
++    assert.equal(JSON.parse(second.result.body)[0].show.title, "无语言剧中文名");
++});
++
++test("「未知」标记过期后重新补查", async () => {
++    const expired = `?${Math.floor((Date.now() - 1000) / 1000)}`;
++    const { httpLogs, persistentData } = await runResponseCase({
++        url: "https://api.trakt.tv/users/me/watchlist",
++        body: UNKNOWN_SHOW_BODY,
++        argument: ON,
++        httpGetMocks: { [UNKNOWN_SHOW_DETAIL_URL]: JSON.stringify({ title: "No Language Show", language: "ko", ids: { trakt: 66 } }) },
++        persistentData: createPersistentData({}, { "show:66": expired }),
++    });
++    assert.equal(httpLogs.filter((log) => log.url === UNKNOWN_SHOW_DETAIL_URL).length, 1);
++    assert.equal(readLanguageStore(persistentData)["show:66"], "ko");
++});
++
++test("补查请求失败时不记「未知」，下次还会再查", async () => {
++    const { persistentData } = await runResponseCase({
++        url: "https://api.trakt.tv/users/me/watchlist",
++        body: UNKNOWN_SHOW_BODY,
++        argument: ON,
++        httpGetMocks: { [UNKNOWN_SHOW_DETAIL_URL]: createHttpErrorMock("network down") },
++        persistentData: createPersistentData(),
++    });
++    assert.equal(readLanguageStore(persistentData)["show:66"], undefined);
++});
++
++// ---------- 调试模式：禁用本地缓存时不读不写定制记录 ----------
++
++test("调试模式禁用本地缓存时，不读也不写语言记录", async () => {
++    const detailUrl = "https://api.trakt.tv/shows/44?extended=cloud9,full,watchnow";
++    const { httpLogs, persistentData } = await runResponseCase({
++        url: "https://api.trakt.tv/users/me/watchlist",
++        body: JSON.stringify([{ type: "show", show: { title: "Unknown Show", ids: { trakt: 44 } } }]),
++        argument: { ...ON, debugMode: "disableLocal" },
++        httpGetMocks: { [detailUrl]: JSON.stringify({ title: "Unknown Show", language: "en", ids: { trakt: 44 } }) },
++        // 本地已有的记录应被忽略，所以仍会补查
++        persistentData: createPersistentData({}, { "show:44": "zh" }),
++    });
++    assert.equal(httpLogs.filter((log) => log.url === detailUrl).length, 1);
++    assert.equal(readLanguageStore(persistentData)["show:44"], "zh");
++});
++
++// ---------- 人物开关不依赖「只翻译中文影视」 ----------
++
++test("只翻译中文影视关闭时，人物页翻译、人物搜索翻译关闭档照样放行", async () => {
++    const OFF = { chineseOnlyTranslation: false };
++    const page = await runResponseCase({
++        url: "https://api.trakt.tv/people/tom-hanks",
++        body: readFixture("people-detail.json"),
++        argument: { ...OFF, peopleTranslationEnabled: false },
++        persistentData: createPersistentData(),
++    });
++    assertPassThrough(page.result);
++    assert.equal(hasTranslationRequest(page.httpLogs), false);
++
++    const search = await runResponseCase({
++        url: "https://api.trakt.tv/search/person?query=tom",
++        body: readFixture("media-people-list.json"),
++        argument: { ...OFF, personSearchTranslationMode: "关闭" },
++        persistentData: createPersistentData(),
++    });
++    assertPassThrough(search.result);
++    assert.equal(hasTranslationRequest(search.httpLogs), false);
++});
++
++test("只翻译中文影视关闭时，人物页翻译开启（默认）照常翻译", async () => {
++    const { result } = await runResponseCase({
++        url: "https://api.trakt.tv/people/42",
++        body: readFixture("people-detail.json"),
++        argument: { chineseOnlyTranslation: false },
++        persistentData: createUnifiedPersistentData({ googlePeople: JSON.parse(createPeopleTranslationCache()) }),
++    });
++    assert.match(JSON.parse(result.body).name, /汤姆·汉克斯/);
 +});
 diff --git a/trakt_simplified_chinese/src/features/comments-translation.mjs b/trakt_simplified_chinese/src/features/comments-translation.mjs
 index edca257..1296ca1 100644
@@ -399,7 +1002,7 @@ index edca257..1296ca1 100644
      return {
          type: "respond",
 diff --git a/trakt_simplified_chinese/src/features/media-translation.mjs b/trakt_simplified_chinese/src/features/media-translation.mjs
-index 5ea35de..9a02c68 100644
+index 22094c0..4804d37 100644
 --- a/trakt_simplified_chinese/src/features/media-translation.mjs
 +++ b/trakt_simplified_chinese/src/features/media-translation.mjs
 @@ -2,6 +2,7 @@ import * as mediaTypes from "../shared/media-types.mjs";
@@ -410,11 +1013,11 @@ index 5ea35de..9a02c68 100644
  import * as cacheUtils from "../utils/cache.mjs";
  import * as commonUtils from "../utils/common.mjs";
  import * as googleFallbackTranslation from "./google-fallback-translation.mjs";
-@@ -91,6 +92,18 @@ async function handleMediaDetail() {
+@@ -91,6 +92,32 @@ async function handleMediaDetail() {
          cacheUtils.saveLinkIdsCache(context.env, linkCache);
      }
  
-+    // 仅处理中文原片：剧集/电影看自身语言，季和单集看所属剧集；非中文原样放行
++    // 只翻译中文影视：剧集/电影看自身语言，季和单集看所属剧集；非中文不动文字，只替换海报
 +    const isShowOrMovie = mediaType === mediaTypes.MEDIA_TYPE.SHOW || mediaType === mediaTypes.MEDIA_TYPE.MOVIE;
 +    if (isShowOrMovie) {
 +        translationScope.rememberMediaLanguage(mediaType, data);
@@ -422,18 +1025,41 @@ index 5ea35de..9a02c68 100644
 +    const inScope = isShowOrMovie
 +        ? await translationScope.isMediaInScope(mediaType, ref.traktId, data?.language)
 +        : await translationScope.isMediaInScope(mediaTypes.MEDIA_TYPE.SHOW, ref.showId);
++    // 中文影视用中文原海报：中文影视按原片语言取海报，其他按「海报语言」
++    const posterImageMode =
++        (isShowOrMovie ? translationScope.getChinesePosterMode(mediaType, data) : translationScope.getChinesePosterMode(mediaTypes.MEDIA_TYPE.SHOW, ref.showId)) ??
++        context.argument.posterImageMode;
 +    if (!inScope) {
-+        return { type: "passThrough" };
++        if (!traktTranslationHelper.shouldReplaceImages()) {
++            return { type: "passThrough" };
++        }
++        const imagesChanged = await traktTranslationHelper.replaceImagesInPlace(data, mediaType, {
++            ...ref,
++            tmdbId: data?.ids?.tmdb ?? null,
++            imageMode: posterImageMode,
++            language: data?.language ?? null,
++            country: data?.country ?? null,
++        });
++        return imagesChanged ? { type: "respond", body: JSON.stringify(data) } : { type: "passThrough" };
 +    }
 +
      const cache = cacheUtils.loadCache(context.env);
      const backendState = traktTranslationHelper.createBackendState(traktTranslationHelper.MEDIA_CONFIG);
-     let cacheChanged = false;
-@@ -149,6 +162,17 @@ async function handleTranslations() {
+     const overridePromise = traktTranslationHelper.getOverrideForTarget(context.env, ref);
+@@ -98,7 +125,7 @@ async function handleMediaDetail() {
+         ? traktTranslationHelper.replaceImagesInPlace(data, mediaType, {
+               ...ref,
+               tmdbId: data?.ids?.tmdb ?? null,
+-              imageMode: context.argument.posterImageMode,
++              imageMode: posterImageMode,
+               language: data?.language ?? null,
+               country: data?.country ?? null,
+           })
+@@ -153,6 +180,17 @@ async function handleTranslations() {
      const target = traktTranslationHelper.resolveTranslationRequestTarget(context.url);
      const merged = translationCache.normalizeTranslations(translationCache.sortTranslations(arr, traktTranslationHelper.PREFERRED_TRANSLATION_LANGUAGE));
  
-+    // 仅处理中文原片：App 自己请求非中文影视的中文翻译时原样放行（不归一化、不写缓存）
++    // 只翻译中文影视：App 自己请求非中文影视的中文翻译时原样放行（不归一化、不写缓存）
 +    if (!traktTranslationHelper.isScriptInitiatedTranslationRequest() && target && translationScope.isChineseOnlyEnabled()) {
 +        const inScope =
 +            target.mediaType === mediaTypes.MEDIA_TYPE.EPISODE
@@ -445,25 +1071,283 @@ index 5ea35de..9a02c68 100644
 +    }
 +
      if (!traktTranslationHelper.isScriptInitiatedTranslationRequest() && target && traktTranslationHelper.buildMediaCacheLookupKey(target.mediaType, target)) {
+         const overridePromise = traktTranslationHelper.getOverrideForTarget(context.env, target);
          const normalized = translationCache.extractNormalizedTranslation(merged);
-         const cache = cacheUtils.loadCache(context.env);
-@@ -192,6 +216,11 @@ async function handleSeasonEpisodesList() {
+@@ -197,15 +235,21 @@ async function handleSeasonEpisodesList() {
      if (traktLinkIds.cacheEpisodeIdsFromSeasonList(linkCache, target.showId, seasons)) {
          cacheUtils.saveLinkIdsCache(context.env, linkCache);
      }
-+    // 仅处理中文原片：非中文剧集的季列表原样放行（上面的集 ID 缓存仍保留，播放器跳转按钮要用）
++    // 中文影视用中文原海报：中文剧集的季海报按原片语言取，其他按「海报语言」
++    const seasonPosterMode =
++        (await translationScope.resolveChinesePosterMode(mediaTypes.MEDIA_TYPE.SHOW, target.showId, traktLinkIds.getLinkIdsCacheEntry(linkCache, target.showId)?.language)) ??
++        context.argument.posterImageMode;
+     const shouldReplaceSeasonImages =
+-        traktTranslationHelper.shouldReplaceImages() && seasons.some((season) => commonUtils.isArray(season?.images?.poster) && season.images.poster.length > 0);
++        traktTranslationHelper.shouldReplaceImages() &&
++        (seasonPosterMode === "chinese" || seasonPosterMode === "original") &&
++        seasons.some((season) => commonUtils.isArray(season?.images?.poster) && season.images.poster.length > 0);
+     const cachedShowEntry = shouldReplaceSeasonImages ? traktLinkIds.getLinkIdsCacheEntry(linkCache, target.showId) : null;
+     let showTmdbId = cachedShowEntry?.ids?.tmdb ?? null;
+     let showLanguage = cachedShowEntry?.language ?? null;
+     let showCountry = cachedShowEntry?.country ?? null;
+     const shouldFetchShowDetailForSeasonImages =
+         shouldReplaceSeasonImages &&
+-        (commonUtils.isNullish(showTmdbId) || (context.argument.posterImageMode === "original" && (commonUtils.isNullish(showLanguage) || commonUtils.isNullish(showCountry))));
++        (commonUtils.isNullish(showTmdbId) || (seasonPosterMode === "original" && (commonUtils.isNullish(showLanguage) || commonUtils.isNullish(showCountry))));
+     if (shouldFetchShowDetailForSeasonImages) {
+         try {
+             const showEntry = commonUtils.isNullish(showTmdbId)
+@@ -231,12 +275,20 @@ async function handleSeasonEpisodesList() {
+     }
+ 
+     const seasonImagePromise = shouldReplaceSeasonImages
+-        ? traktTranslationHelper.replaceSeasonImagesInPlace(seasons, target.showId, showTmdbId, showLanguage, showCountry).catch((error) => {
++        ? traktTranslationHelper.replaceSeasonImagesInPlace(seasons, target.showId, showTmdbId, showLanguage, showCountry, seasonPosterMode).catch((error) => {
+               context.env.log(`Trakt season image replacement failed for show=${target.showId}: ${error}`);
+               return false;
+           })
+         : Promise.resolve(false);
+ 
++    // 只翻译中文影视：非中文剧集的季列表不动文字，只替换季海报
++    //（上面的集 ID 缓存仍保留，播放器跳转按钮要用）
 +    if (!(await translationScope.isMediaInScope(mediaTypes.MEDIA_TYPE.SHOW, target.showId))) {
++        const seasonImagesChanged = await seasonImagePromise;
 +        cacheUtils.clearCurrentSeason(context.env);
++        return seasonImagesChanged ? { type: "respond", body: JSON.stringify(seasons) } : { type: "passThrough" };
++    }
++
+     const currentSeasonNumber = cacheUtils.getCurrentSeason(context.env, target.showId);
+     const targetSeason = seasons.find((item) => {
+         return commonUtils.ensureArray(item?.episodes).some((episode) => Number(episode?.season) === currentSeasonNumber);
+diff --git a/trakt_simplified_chinese/src/features/people-search-scope.mjs b/trakt_simplified_chinese/src/features/people-search-scope.mjs
+new file mode 100644
+index 0000000..ec5a1a9
+--- /dev/null
++++ b/trakt_simplified_chinese/src/features/people-search-scope.mjs
+@@ -0,0 +1,209 @@
++//「人物搜索翻译」（不依赖「只翻译中文影视」，单独生效）分四档：全部翻译 / 华人和日韩名 / 仅华人名 / 关闭。
++//    - 华人和日韩名：TMDb 有中文名，且中文名不含间隔号（音译的外国名一般写成「汤姆·汉克斯」）。
++//    - 仅华人名：在上一档基础上，再排除 TMDb 出生地在日本、韩国的人；出生地缺失或在其他地方（含海外华裔）按华人处理。
++//    - 中文名优先取本地缓存和翻译缓存后端；都没有时补查一次 TMDb 人物详情（每页最多 MAX_TMDB_LOOKUPS 个），
++//      结果写回人物缓存（有中文名 90 天、无中文名 7 天），出生地判定单独长期记在本地，同一个人只查一次。
++//    - 不符合条件的人原样保留，名字和简介都不调用机器翻译。
++// 关闭档在 translation-scope 的 shouldBypassResponse 里直接放行。
++import * as tmdbClientModule from "../outbound/tmdb-client.mjs";
++import { createForkStore } from "../shared/fork-store.mjs";
++import * as cacheUtils from "../utils/cache.mjs";
++import * as commonUtils from "../utils/common.mjs";
++
++import {
++    applyPersonNameNotFoundCache,
++    flushPeopleNameBackendWrites,
++    getCachedTmdbPersonNameTranslation,
++    getPeopleTranslationCacheEntry,
++    getValidPersonNameNotFoundEntry,
++    hydratePeopleNamesFromBackend,
++    PEOPLE_NAME_SOURCE,
++    setPeopleTranslationCacheEntry,
++} from "./people-name-cache.mjs";
++import { handlePeopleSearchList } from "./people-translation.mjs";
++import { collectPeopleCollectionItems } from "./people-translation-apply.mjs";
++
++const PERSON_SEARCH_MODE = {
++    ALL: "all",
++    EAST_ASIAN: "eastAsian",
++    CHINESE: "chinese",
++    OFF: "off",
++};
++const PERSON_SEARCH_MODE_LABELS = {
++    全部翻译: PERSON_SEARCH_MODE.ALL,
++    华人和日韩名: PERSON_SEARCH_MODE.EAST_ASIAN,
++    仅华人名: PERSON_SEARCH_MODE.CHINESE,
++    关闭: PERSON_SEARCH_MODE.OFF,
++};
++
++const REGION_STORE_KEY = "dj_trakt_fork_person_region";
++const REGION_STORE_MAX_ENTRIES = 3000;
++const REGION = { CHINESE: "c", JAPAN_KOREA: "jk" };
++const MAX_TMDB_LOOKUPS = 20;
++
++// 间隔号的几种写法：· • ・ ‧ ･ ‐（音译外国名用来分隔名和姓）
++const NAME_SEPARATOR_RE = /[·•・‧･‐]/;
++// 出生地文本大多是英文（"Tokyo, Japan"），也有中文的（"臺灣屏東縣潮州鎮"）
++const JAPAN_KOREA_BIRTHPLACE_RE = /japan|korea|日本|韩国|韓國|大韩|大韓|朝鲜|朝鮮/i;
++
++function normalizePersonSearchMode(value) {
++    const normalized = String(value ?? "").trim();
++    if (PERSON_SEARCH_MODE_LABELS[normalized]) {
++        return PERSON_SEARCH_MODE_LABELS[normalized];
++    }
++    return Object.values(PERSON_SEARCH_MODE).includes(normalized) ? normalized : PERSON_SEARCH_MODE.ALL;
++}
++
++function getPersonSearchMode() {
++    return normalizePersonSearchMode(globalThis.$ctx?.argument?.personSearchTranslationMode);
++}
++
++function isEastAsianName(chineseName) {
++    const name = String(chineseName ?? "").trim();
++    return !!name && commonUtils.containsChineseCharacter(name) && !NAME_SEPARATOR_RE.test(name);
++}
++
++function resolveRegionFromBirthplace(placeOfBirth) {
++    return JAPAN_KOREA_BIRTHPLACE_RE.test(String(placeOfBirth ?? "")) ? REGION.JAPAN_KOREA : REGION.CHINESE;
++}
++
++// 出生地判定记录（按写入先后淘汰最旧的）
++const regionStore = createForkStore({ key: REGION_STORE_KEY, max: REGION_STORE_MAX_ENTRIES });
++
++// ---------- 人物搜索：只翻译华人（和日韩）名 ----------
++
++function describePerson(person, cache) {
++    const traktId = commonUtils.isNonNullish(person?.ids?.trakt) ? String(person.ids.trakt) : "";
++    const tmdbId = person?.ids?.tmdb;
++    const originalName = String(person?.name ?? "").trim();
++    const entry = traktId ? getPeopleTranslationCacheEntry(cache, traktId) : null;
++    return {
++        person,
++        traktId,
++        tmdbId,
++        originalName,
++        chineseName: entry && originalName ? getCachedTmdbPersonNameTranslation(entry, originalName) : "",
++        hasNotFound: !!getValidPersonNameNotFoundEntry(entry),
++    };
++}
++
++function needsTmdbName(info) {
++    return !!info.traktId && !!info.originalName && commonUtils.isNonNullish(info.tmdbId) && !info.chineseName && !info.hasNotFound;
++}
++
++function needsRegion(info, mode) {
++    return mode === PERSON_SEARCH_MODE.CHINESE && isEastAsianName(info.chineseName) && !regionStore.read(info.traktId);
++}
++
++// 补查 TMDb 人物详情：拿中文名（写回人物缓存）和出生地（写进出生地记录）
++async function lookupTmdbPeople(infos, cache) {
++    let cacheChanged = false;
++    await Promise.all(
++        infos.map(async (info) => {
++            try {
++                const payload = await tmdbClientModule.fetchPerson(info.tmdbId);
++                const chineseName = String(payload?.name ?? "").trim();
++                if (chineseName && commonUtils.containsChineseCharacter(chineseName)) {
++                    cacheChanged =
++                        setPeopleTranslationCacheEntry(
++                            cache,
++                            info.traktId,
++                            {
++                                name: {
++                                    sourceTextHash: commonUtils.computeStringHash(info.originalName),
++                                    translatedText: chineseName,
++                                    source: PEOPLE_NAME_SOURCE.TMDB,
++                                },
++                            },
++                            true,
++                        ) || cacheChanged;
++                    info.chineseName = chineseName;
++                } else {
++                    cacheChanged = applyPersonNameNotFoundCache(cache, info.traktId) || cacheChanged;
++                    info.hasNotFound = true;
++                }
++                regionStore.write(info.traktId, resolveRegionFromBirthplace(payload?.place_of_birth));
++            } catch (error) {
++                globalThis.$ctx?.env?.log?.(`Trakt person search TMDb lookup failed for ${info.traktId}: ${error}`);
++            }
++        }),
++    );
++    return cacheChanged;
++}
++
++function isPersonInScope(info, mode) {
++    if (!isEastAsianName(info.chineseName)) {
++        return false;
++    }
++    if (mode !== PERSON_SEARCH_MODE.CHINESE) {
++        return true;
++    }
++    // 补查失败、还不知道出生地的，这次先按华人处理（名字已经通过了无间隔号的检查）
++    return regionStore.read(info.traktId) !== REGION.JAPAN_KOREA;
++}
++
++// 交给上游的人物搜索翻译处理：只把符合条件的人传过去，翻译完放回原位置，其他人原样保留
++async function translateSelectedEntries(data, selectedIndexes) {
++    if (selectedIndexes.length === 0) {
++        return { type: "respond", body: JSON.stringify(data) };
++    }
++    const context = globalThis.$ctx;
++    const originalBody = context.responseBody;
++    try {
++        context.responseBody = JSON.stringify(selectedIndexes.map((index) => data[index]));
++        const result = await handlePeopleSearchList();
++        const translated = result?.type === "respond" ? commonUtils.parseJsonBody(result.body) : null;
++        if (Array.isArray(translated) && translated.length === selectedIndexes.length) {
++            selectedIndexes.forEach((dataIndex, index) => {
++                data[dataIndex] = translated[index];
++            });
++        }
++    } finally {
++        context.responseBody = originalBody;
++    }
++    return { type: "respond", body: JSON.stringify(data) };
++}
++
++async function handleScopedPeopleSearchList() {
++    const mode = getPersonSearchMode();
++    const context = globalThis.$ctx;
++    if (mode === PERSON_SEARCH_MODE.ALL || mode === PERSON_SEARCH_MODE.OFF) {
++        // 关闭档已在响应入口放行，这里只会遇到全部翻译
++        return handlePeopleSearchList();
++    }
++
++    const data = commonUtils.parseJsonBody(context.responseBody);
++    if (!Array.isArray(data)) {
 +        return { type: "passThrough" };
 +    }
-     const shouldReplaceSeasonImages =
-         traktTranslationHelper.shouldReplaceImages() && seasons.some((season) => commonUtils.isArray(season?.images?.poster) && season.images.poster.length > 0);
-     const cachedShowEntry = shouldReplaceSeasonImages ? traktLinkIds.getLinkIdsCacheEntry(linkCache, target.showId) : null;
++
++    const cache = cacheUtils.loadPeopleTranslationCache(context.env);
++    let cacheChanged = false;
++    let infos = data.map((entry) => {
++        const person = collectPeopleCollectionItems([entry])[0]?.person;
++        return person ? describePerson(person, cache) : null;
++    });
++
++    // 先问翻译缓存后端（一次批量请求），后端也没有的再逐个查 TMDb
++    const backendIds = infos.filter((info) => info && needsTmdbName(info)).map((info) => info.traktId);
++    if (backendIds.length > 0) {
++        cacheChanged = (await hydratePeopleNamesFromBackend(cache, backendIds)) || cacheChanged;
++        infos = infos.map((info) => (info ? describePerson(info.person, cache) : null));
++    }
++
++    const lookups = infos.filter((info) => info && (needsTmdbName(info) || needsRegion(info, mode))).slice(0, MAX_TMDB_LOOKUPS);
++    if (lookups.length > 0) {
++        cacheChanged = (await lookupTmdbPeople(lookups, cache)) || cacheChanged;
++    }
++
++    if (cacheChanged) {
++        cacheUtils.savePeopleTranslationCache(context.env, cache);
++    }
++    flushPeopleNameBackendWrites();
++    regionStore.flush();
++
++    const selectedIndexes = infos.reduce((indexes, info, index) => (info && isPersonInScope(info, mode) ? indexes.concat(index) : indexes), []);
++    return translateSelectedEntries(data, selectedIndexes);
++}
++
++export { getPersonSearchMode, handleScopedPeopleSearchList, isEastAsianName, normalizePersonSearchMode, PERSON_SEARCH_MODE, resolveRegionFromBirthplace };
 diff --git a/trakt_simplified_chinese/src/module-manifest.mjs b/trakt_simplified_chinese/src/module-manifest.mjs
-index 8596f3b..d2a991a 100644
+index 4b8267c..7f4f896 100644
 --- a/trakt_simplified_chinese/src/module-manifest.mjs
 +++ b/trakt_simplified_chinese/src/module-manifest.mjs
-@@ -113,6 +113,20 @@ const argumentFields = [
+@@ -37,7 +37,7 @@ const argumentFields = [
+         options: ["原片语言", "中文", "原图"],
+         optionValues: ["original", "chinese", "default"],
+         tag: "海报语言",
+-        desc: "原片语言使用 TMDb 影片原始语言图片；中文使用 TMDb 中文图片；原图保留 Trakt 原图",
++        desc: "开启「中文影视用中文原海报」时只对其他语言的影视生效。原片语言使用 TMDb 影片原始语言图片；中文使用 TMDb 中文图片；原图保留 Trakt 原图",
+     },
+     {
+         key: "historyEpisodesMergedByShow",
+@@ -96,6 +96,36 @@ const argumentFields = [
          tag: "调试模式",
          desc: "禁用本地缓存：不读写持久化存储；禁用远端缓存：不请求后端缓存接口；禁用所有缓存：两者皆禁用",
      },
@@ -471,46 +1355,324 @@ index 8596f3b..d2a991a 100644
 +        key: "chineseOnlyTranslation",
 +        defaultValue: true,
 +        type: "boolean",
-+        tag: "仅处理中文原片",
-+        desc: "开启后只处理原始语言为中文的剧集和电影；其他语言的标题、简介、海报等内容全部保留 Trakt 原样，不做任何处理（「海报语言」只对中文原片生效）",
++        tag: "只翻译中文影视",
++        desc: "开启后只翻译原始语言为中文的剧集和电影；其他语言的标题、简介、集数、评论、演职员等保留 Trakt 原文。海报见「中文影视用中文原海报」和「海报语言」",
 +    },
 +    {
 +        key: "peopleTranslationEnabled",
 +        defaultValue: true,
 +        type: "boolean",
 +        tag: "人物页翻译",
-+        desc: "开启「仅处理中文原片」时，人物页和人物搜索是否翻译演员名和简介；影视页里的演职员表仍按该影视的语言决定",
++        desc: "人物详情页是否翻译演员名和简介，不受「只翻译中文影视」影响；人物搜索见「人物搜索翻译」，影视页里的演职员表仍按该影视的语言决定",
++    },
++    {
++        key: "personSearchTranslationMode",
++        defaultValue: "all",
++        type: "select",
++        options: ["全部翻译", "华人和日韩名", "仅华人名", "关闭"],
++        optionValues: ["all", "eastAsian", "chinese", "off"],
++        tag: "人物搜索翻译",
++        desc: "人物搜索结果（含本月生日人物列表）翻译谁的名字和简介，不受「只翻译中文影视」影响。华人和日韩名：TMDb 中文名不带「·」的人；仅华人名：再排除出生在日本、韩国的人；其他人保留原文。与「人物页翻译」互不影响",
++    },
++    {
++        key: "chinesePosterEnabled",
++        defaultValue: true,
++        type: "boolean",
++        tag: "中文影视用中文原海报",
++        desc: "开启后原始语言为中文的剧集和电影固定使用 TMDb 中文海报（优先原产地区版本，如台剧用台版、港片用港版），不受「海报语言」影响；TMDb 没有中文海报时保留 Trakt 原图",
 +    },
  ];
  
  const ALL_ARGUMENT_KEYS = argumentFields.map((field) => field.key);
+diff --git a/trakt_simplified_chinese/src/outbound/trakt-api-client.mjs b/trakt_simplified_chinese/src/outbound/trakt-api-client.mjs
+index 37202d8..766d43f 100644
+--- a/trakt_simplified_chinese/src/outbound/trakt-api-client.mjs
++++ b/trakt_simplified_chinese/src/outbound/trakt-api-client.mjs
+@@ -2,6 +2,19 @@ import * as mediaTypes from "../shared/media-types.mjs";
+ import * as commonUtils from "../utils/common.mjs";
+ import * as httpUtils from "../utils/http.mjs";
+ 
++// 脚本自己发起的详情请求带上这个请求头。若代理工具把脚本的请求也交给本脚本处理，
++// 响应阶段看到它就原样放行：调用方只需要语言、ID、原标题，不需要再翻译、换海报，也避免多余请求。
++const SCRIPT_DETAIL_REQUEST_HEADER = "x-script-trakt-detail-request";
++const SCRIPT_DETAIL_REQUEST_VALUE = "true";
++
++function isScriptInitiatedDetailRequest() {
++    return String(httpUtils.getRequestHeaderValue(SCRIPT_DETAIL_REQUEST_HEADER) ?? "").toLowerCase() === SCRIPT_DETAIL_REQUEST_VALUE;
++}
++
++function fetchScriptDetailJson(url) {
++    return httpUtils.fetchJson(url, { [SCRIPT_DETAIL_REQUEST_HEADER]: SCRIPT_DETAIL_REQUEST_VALUE });
++}
++
+ function resolveTraktApiBaseUrl() {
+     const origin = String(globalThis.$ctx.url?.origin ?? "");
+     return /^https:\/\/apiz?\.trakt\.tv$/i.test(origin) ? origin : "";
+@@ -127,12 +140,12 @@ async function fetchTranslationPayload(mediaType, ref, extraHeaders) {
+ 
+ function fetchMediaDetail(mediaType, traktId) {
+     const url = buildMediaDetailUrl(mediaType, traktId);
+-    return url ? httpUtils.fetchJson(url) : Promise.resolve(null);
++    return url ? fetchScriptDetailJson(url) : Promise.resolve(null);
+ }
+ 
+ function fetchEpisodeDetail(ref) {
+     const url = buildEpisodeDetailUrl(ref);
+-    return url ? httpUtils.fetchJson(url) : Promise.resolve(null);
++    return url ? fetchScriptDetailJson(url) : Promise.resolve(null);
+ }
+ 
+-export { fetchBulkTranslations, fetchEpisodeDetail, fetchMediaDetail, fetchTranslationPayload };
++export { fetchBulkTranslations, fetchEpisodeDetail, fetchMediaDetail, fetchTranslationPayload, isScriptInitiatedDetailRequest, SCRIPT_DETAIL_REQUEST_HEADER };
 diff --git a/trakt_simplified_chinese/src/response.mjs b/trakt_simplified_chinese/src/response.mjs
-index 19f6c85..f320225 100644
+index 19f6c85..3130efe 100644
 --- a/trakt_simplified_chinese/src/response.mjs
 +++ b/trakt_simplified_chinese/src/response.mjs
-@@ -8,6 +8,7 @@ import * as playerInjectionSofaTimeHandler from "./features/player-injection-sof
+@@ -3,11 +3,14 @@ import * as googleFallbackTranslationHandler from "./features/google-fallback-tr
+ import * as historyEpisodesMergedByShowHandler from "./features/history-episodes-merged-by-show.mjs";
+ import * as listsTranslationHandler from "./features/lists-translation.mjs";
+ import * as mediaTranslationHandler from "./features/media-translation.mjs";
++import * as peopleSearchScopeHandler from "./features/people-search-scope.mjs";
+ import * as peopleTranslationHandler from "./features/people-translation.mjs";
+ import * as playerInjectionSofaTimeHandler from "./features/player-injection-sofatime.mjs";
  import * as playerInjectionTraktHandler from "./features/player-injection-trakt.mjs";
  import * as sentimentsTranslationHandler from "./features/sentiments-translation.mjs";
++import * as traktApiClient from "./outbound/trakt-api-client.mjs";
  import { createRoute, dispatchRoutes } from "./shared/route.mjs";
 +import * as translationScope from "./shared/translation-scope.mjs";
  
  function createResponsePhaseRoutes() {
      return [
-@@ -202,7 +203,11 @@ function createResponsePhaseRoutes() {
+@@ -113,8 +116,8 @@ function createResponsePhaseRoutes() {
+         }),
+ 
+         createRoute({ pattern: /^people\/[^/]+\/(movies|shows)$/i, id: "people.mediaCredits", handler: peopleTranslationHandler.handlePersonMediaCreditsList }),
+-        createRoute({ pattern: /^search\/person$/i, id: "search.person", handler: peopleTranslationHandler.handlePeopleSearchList }),
+-        createRoute({ pattern: /^people\/this_month$/i, id: "people.thisMonth", handler: peopleTranslationHandler.handlePeopleSearchList }),
++        createRoute({ pattern: /^search\/person$/i, id: "search.person", handler: peopleSearchScopeHandler.handleScopedPeopleSearchList }),
++        createRoute({ pattern: /^people\/this_month$/i, id: "people.thisMonth", handler: peopleSearchScopeHandler.handleScopedPeopleSearchList }),
+ 
+         createRoute({ pattern: /^users\/[^/]+\/mir$/i, id: "users.mir", handler: mediaTranslationHandler.handleMonthlyReview }),
+ 
+@@ -202,7 +205,15 @@ function createResponsePhaseRoutes() {
      ];
  }
  
 -function handleResponse() {
 +async function handleResponse() {
-+    // 仅处理中文原片：非中文内容原样放行
++    // 脚本自己发起的详情请求：原样放行，不再翻译、换海报
++    if (traktApiClient.isScriptInitiatedDetailRequest()) {
++        return { type: "passThrough" };
++    }
++    // 只翻译中文影视：非中文内容原样放行
 +    if (await translationScope.shouldBypassResponse(globalThis.$ctx)) {
 +        return { type: "passThrough" };
 +    }
      return dispatchRoutes(createResponsePhaseRoutes);
  }
  
+diff --git a/trakt_simplified_chinese/src/shared/fork-store.mjs b/trakt_simplified_chinese/src/shared/fork-store.mjs
+new file mode 100644
+index 0000000..c6c31df
+--- /dev/null
++++ b/trakt_simplified_chinese/src/shared/fork-store.mjs
+@@ -0,0 +1,73 @@
++// 定制功能用的本地记录（影视语言、评论范围、人物出生地）。
++// 每份记录是一个 key → 字符串的对象，整份存在持久化存储里；同一次脚本运行内只读一次、按需写回。
++// 超过上限时按写入先后淘汰最旧的。「调试模式」禁用本地缓存时既不读也不写，和上游缓存一致。
++import * as cacheUtils from "../utils/cache.mjs";
++import * as commonUtils from "../utils/common.mjs";
++
++const RUNTIME_STATE_KEY = "__forkStores";
++
++function getState(definition) {
++    const context = globalThis.$ctx;
++    if (!context) {
++        return { store: {}, dirty: false };
++    }
++    context[RUNTIME_STATE_KEY] ||= {};
++    if (!context[RUNTIME_STATE_KEY][definition.key]) {
++        let store = {};
++        if (!cacheUtils.isLocalCacheDisabled()) {
++            try {
++                store = commonUtils.ensureObject(context.env?.getjson(definition.key, {}));
++            } catch {
++                store = {};
++            }
++        }
++        const state = { store, dirty: false };
++        if (typeof definition.onLoad === "function" && definition.onLoad(store)) {
++            state.dirty = true;
++        }
++        context[RUNTIME_STATE_KEY][definition.key] = state;
++    }
++    return context[RUNTIME_STATE_KEY][definition.key];
++}
++
++// definition: { key: 存储键名, max: 最多条数, onLoad?(store): 读入后整理旧数据，有改动返回 true }
++function createForkStore(definition) {
++    return {
++        read(key) {
++            return key ? (getState(definition).store[key] ?? "") : "";
++        },
++        write(key, value) {
++            if (!key || !value) {
++                return;
++            }
++            const state = getState(definition);
++            if (state.store[key] === value) {
++                return;
++            }
++            // 先删再写，让这条排到最后（最晚淘汰）
++            delete state.store[key];
++            state.store[key] = value;
++            state.dirty = true;
++        },
++        flush() {
++            const state = getState(definition);
++            if (!state.dirty || cacheUtils.isLocalCacheDisabled()) {
++                return;
++            }
++            const keys = Object.keys(state.store);
++            if (keys.length > definition.max) {
++                for (const key of keys.slice(0, keys.length - definition.max)) {
++                    delete state.store[key];
++                }
++            }
++            try {
++                globalThis.$ctx?.env?.setjson(state.store, definition.key);
++                state.dirty = false;
++            } catch (error) {
++                globalThis.$ctx?.env?.log?.(`Trakt fork store ${definition.key} save failed: ${error}`);
++            }
++        },
++    };
++}
++
++export { createForkStore };
+diff --git a/trakt_simplified_chinese/src/shared/media-image-replacement.mjs b/trakt_simplified_chinese/src/shared/media-image-replacement.mjs
+index a5defd9..c1defc9 100644
+--- a/trakt_simplified_chinese/src/shared/media-image-replacement.mjs
++++ b/trakt_simplified_chinese/src/shared/media-image-replacement.mjs
+@@ -63,8 +63,17 @@ function isPosterImageReplacementUserAgent(userAgent = globalThis.$ctx?.userAgen
+     return /^Trakt/i.test(String(userAgent ?? "").trim());
+ }
+ 
++// 「中文影视用中文原海报」：开启后中文影视按“原片语言”取海报，其他影视仍按「海报语言」（条目的 ref.imageMode 决定）
++function isChinesePosterEnabled() {
++    return globalThis.$ctx?.argument?.chinesePosterEnabled === true;
++}
++
+ function shouldReplaceImages() {
+-    return getPosterImageMode() !== POSTER_IMAGE_MODE.DEFAULT && isPosterImageReplacementUserAgent();
++    return (getPosterImageMode() !== POSTER_IMAGE_MODE.DEFAULT || isChinesePosterEnabled()) && isPosterImageReplacementUserAgent();
++}
++
++function isReplaceablePosterMode(mode) {
++    return mode === POSTER_IMAGE_MODE.CHINESE || mode === POSTER_IMAGE_MODE.ORIGINAL;
+ }
+ 
+ function getImageFetchModes() {
+@@ -181,11 +190,17 @@ function getFetchImageFields(target, mediaType, ref) {
+         : [];
+ }
+ 
++// TMDb 用 "cn" 表示粤语；粤语片的中文海报也可能标成 "zh"，所以原片语言为 "cn" 时同时接受 "zh" 海报（"cn" 优先）
++const IMAGE_LANGUAGE_FALLBACKS = { cn: ["zh"] };
++
+ function getImageLanguageScore(image, preference) {
+     const language = String(image?.iso_639_1 ?? "")
+         .trim()
+         .toLowerCase();
+-    return language === preference.language ? 1 : 0;
++    if (language === preference.language) {
++        return 1;
++    }
++    return (IMAGE_LANGUAGE_FALLBACKS[preference.language] ?? []).includes(language) ? 0.5 : 0;
+ }
+ 
+ function getImageRegionScore(image, preference) {
+@@ -420,8 +435,7 @@ async function fetchImageEntries(mediaType, ref, fields) {
+         payload = mergedImagesPayload;
+     } else {
+         const languages = preferences
+-            .map(({ preference }) => preference?.language)
+-            .filter(Boolean)
++            .flatMap(({ preference }) => (preference?.language ? [preference.language, ...(IMAGE_LANGUAGE_FALLBACKS[preference.language] ?? [])] : []))
+             .filter((language, index, array) => array.indexOf(language) === index);
+         payload =
+             languages.length === 0
+@@ -481,7 +495,11 @@ function getMissingImageFields(cache, mediaType, ref, fields) {
+ }
+ 
+ function getCurrentModeMissingImageFields(cache, mediaType, ref, fields) {
+-    return getMissingImageFields(cache, mediaType, { ...ref, imageMode: getPosterImageMode() }, fields);
++    const mode = ref?.imageMode ?? getPosterImageMode();
++    if (!isReplaceablePosterMode(mode)) {
++        return [];
++    }
++    return getMissingImageFields(cache, mediaType, { ...ref, imageMode: mode }, fields);
+ }
+ 
+ function hasCurrentModeMissingImages(cache, targets) {
+@@ -489,7 +507,11 @@ function hasCurrentModeMissingImages(cache, targets) {
+ }
+ 
+ async function shouldSkipCurrentOriginalImages(mediaType, ref) {
+-    if (getPosterImageMode() !== POSTER_IMAGE_MODE.ORIGINAL) {
++    const mode = ref?.imageMode ?? getPosterImageMode();
++    if (!isReplaceablePosterMode(mode)) {
++        return true;
++    }
++    if (mode !== POSTER_IMAGE_MODE.ORIGINAL) {
+         return false;
+     }
+     const preference = await resolveImagePreference(mediaType, { ...ref, imageMode: POSTER_IMAGE_MODE.ORIGINAL });
+@@ -637,7 +659,7 @@ async function fetchAndPersistMissingImages(cache, targets, backendState = creat
+         }
+         try {
+             const entries = await fetchImageEntries(mediaType, ref, fields);
+-            const currentMode = getPosterImageMode();
++            const currentMode = ref?.imageMode ?? getPosterImageMode();
+             for (const { ref: modeRef, entry } of entries) {
+                 if ((modeRef?.imageMode ?? currentMode) === currentMode) {
+                     storeImageCacheEntry(cache, mediaType, modeRef, entry);
+@@ -659,8 +681,13 @@ async function hydrateAndFetchImages(cache, targets, backendState) {
+         return false;
+     }
+     try {
+-        const currentMode = getPosterImageMode();
+-        cacheChanged = (await hydrateImagesFromBackend(cache, targets, currentMode)) || cacheChanged;
++        // 条目可能分属不同海报模式（中文影视 original，其他按「海报语言」），按模式分别读后端缓存
++        for (const mode of [POSTER_IMAGE_MODE.CHINESE, POSTER_IMAGE_MODE.ORIGINAL]) {
++            const modeTargets = targets.filter(({ ref }) => (ref?.imageMode ?? getPosterImageMode()) === mode);
++            if (modeTargets.length > 0) {
++                cacheChanged = (await hydrateImagesFromBackend(cache, modeTargets, mode)) || cacheChanged;
++            }
++        }
+         if (!hasCurrentModeMissingImages(cache, targets)) {
+             return cacheChanged;
+         }
+@@ -701,7 +728,7 @@ function buildSeasonPosterRef(showId, showTmdbId, season) {
+     };
+ }
+ 
+-async function replaceSeasonImagesInPlace(seasons, showId, showTmdbId, showLanguage = null, showCountry = null) {
++async function replaceSeasonImagesInPlace(seasons, showId, showTmdbId, showLanguage = null, showCountry = null, imageMode = null) {
+     if (commonUtils.isNotArray(seasons) || commonUtils.isNullish(showId) || commonUtils.isNullish(showTmdbId)) {
+         return false;
+     }
+@@ -714,7 +741,7 @@ async function replaceSeasonImagesInPlace(seasons, showId, showTmdbId, showLangu
+             mediaType: "season",
+             ref: {
+                 ...buildSeasonPosterRef(showId, showTmdbId, season),
+-                imageMode: getPosterImageMode(),
++                imageMode: imageMode ?? getPosterImageMode(),
+                 language: showLanguage,
+                 country: showCountry,
+             },
 diff --git a/trakt_simplified_chinese/src/shared/trakt-translation-helper.mjs b/trakt_simplified_chinese/src/shared/trakt-translation-helper.mjs
-index f11e435..2cbc652 100644
+index f11e435..daf0d29 100644
 --- a/trakt_simplified_chinese/src/shared/trakt-translation-helper.mjs
 +++ b/trakt_simplified_chinese/src/shared/trakt-translation-helper.mjs
 @@ -48,6 +48,7 @@ import {
@@ -521,7 +1683,16 @@ index f11e435..2cbc652 100644
  
  const DIRECT_MEDIA_TYPE_SHOW_STATUSES = ["returning series", "ended", "canceled"];
  
-@@ -378,10 +379,15 @@ function unwrapDirectMediaItems(arr, mediaConfig) {
+@@ -246,7 +247,7 @@ function buildMediaRef(item, mediaType) {
+         traktId,
+         backendLookupKey: String(traktId),
+         tmdbId: target?.ids?.tmdb ?? null,
+-        imageMode: getPosterImageMode(),
++        imageMode: translationScope.getChinesePosterMode(mediaType, target) ?? getPosterImageMode(),
+         language: target?.language ?? null,
+         country: target?.country ?? null,
+         availableTranslations: commonUtils.isArray(target.available_translations) ? target.available_translations : null,
+@@ -378,11 +379,13 @@ function unwrapDirectMediaItems(arr, mediaConfig) {
      });
  }
  
@@ -532,17 +1703,27 @@ index f11e435..2cbc652 100644
 -        return items;
 +    if (commonUtils.isNotArray(allItems) || allItems.length === 0) {
 +        return allItems;
-+    }
-+    // 仅处理中文原片：其他条目不翻译、不替换海报，保持 Trakt 原样
-+    const items = await translationScope.filterItemsInScope(allItems);
-+    if (items.length === 0) {
-+        return allItems;
      }
++    // 只翻译中文影视：文字只处理中文条目；海报对所有条目处理（中文影视可固定用中文原海报，其他按「海报语言」）
++    const items = await translationScope.filterItemsInScope(allItems);
  
      const context = globalThis.$ctx;
-@@ -445,7 +451,7 @@ async function translateMediaItemsInPlace(items, bodyOverride) {
+     const backendState = createBackendState(MEDIA_CONFIG);
+@@ -393,7 +396,7 @@ async function translateMediaItemsInPlace(items, bodyOverride) {
+     const imageCache = shouldReplaceMediaImages ? cacheUtils.loadImageCache(context.env) : {};
+     const imageBackendState = shouldReplaceMediaImages ? createImageBackendState() : null;
+     let skippedImageKeys = {};
+-    const imageTargets = shouldReplaceMediaImages ? collectImageTargets(items, MEDIA_CONFIG) : [];
++    const imageTargets = shouldReplaceMediaImages ? collectImageTargets(allItems, MEDIA_CONFIG) : [];
+     const imageReplacementPromise = shouldReplaceMediaImages
+         ? (async () => {
+               const { skippedKeys, targets } = await filterReplaceableImageTargets(imageTargets);
+@@ -443,9 +446,9 @@ async function translateMediaItemsInPlace(items, bodyOverride) {
+         applyOverrideToTarget(target, getOverrideFromTable(overridesTable, ref));
+     });
      if (shouldReplaceMediaImages) {
-         applyImagesToItems(items, imageCache, MEDIA_CONFIG, skippedImageKeys);
+-        applyImagesToItems(items, imageCache, MEDIA_CONFIG, skippedImageKeys);
++        applyImagesToItems(allItems, imageCache, MEDIA_CONFIG, skippedImageKeys);
      }
 -    return items;
 +    return allItems;
@@ -551,33 +1732,54 @@ index f11e435..2cbc652 100644
  async function translateWrapperItems(bodyOverride) {
 diff --git a/trakt_simplified_chinese/src/shared/translation-scope.mjs b/trakt_simplified_chinese/src/shared/translation-scope.mjs
 new file mode 100644
-index 0000000..d8df9d0
+index 0000000..a4980fd
 --- /dev/null
 +++ b/trakt_simplified_chinese/src/shared/translation-scope.mjs
-@@ -0,0 +1,313 @@
-+// 仅处理中文原片：原始语言为中文的剧集/电影照常翻译；其他语言的内容保留 Trakt 原始响应，不做任何处理。
+@@ -0,0 +1,373 @@
++// 只翻译中文影视：原始语言为中文的剧集/电影照常翻译；其他语言的文字内容保留 Trakt 原文，不做翻译。
++// 海报：「中文影视用中文原海报」开启时中文影视按原片语言取海报，其他影视按「海报语言」（见 getChinesePosterMode）。
 +//
-+// - 列表：逐条判断，只有中文原片条目会被翻译、替换海报；其他条目原样保留。
-+// - 绑定到单个影视的页面（详情、季列表、预告片、评论、口碑摘要、演职员表）：按该影视判断，非中文原片直接放行原始响应。
-+// - 人物页、人物搜索：由「人物页翻译」开关决定（默认翻译）。
++// - 列表：逐条判断，只有中文条目的文字会被翻译。
++// - 绑定到单个影视的页面：详情、季列表只替换海报不动文字；预告片、评论、口碑摘要、演职员表对非中文影视原样放行。
++// - 人物页：由「人物页翻译」开关决定；人物搜索（含本月生日人物列表）：由「人物搜索翻译」决定。这两项不依赖本开关，单独生效（四档里关闭档在这里放行，
++//   只翻译华人/日韩名两档见 features/people-search-scope.mjs）。
 +// - 片单名称和描述：不属于某个影视，不处理。
 +// - 非翻译功能（播放器跳转按钮、VIP、历史合并等）不受影响。
 +//
 +// 原始语言取自 Trakt 返回的 language 字段；见过的语言按 show/movie + traktId（和 slug）记录在本地，
 +// 响应里没有语言时从记录里取，仍未知时请求一次详情；实在拿不到时按“中文”处理，避免漏翻中文剧集。
++// 详情查到了但 Trakt 没填语言的，记一个「未知」标记，UNKNOWN_LANGUAGE_TTL_MS 内不再重复查询（请求失败不记）。
++import { getPersonSearchMode, PERSON_SEARCH_MODE } from "../features/people-search-scope.mjs";
 +import * as traktApiClient from "../outbound/trakt-api-client.mjs";
 +import * as commonUtils from "../utils/common.mjs";
 +
++import { createForkStore } from "./fork-store.mjs";
 +import * as mediaTypes from "./media-types.mjs";
 +
 +const CHINESE_LANGUAGES = new Set(["zh", "cn"]);
 +const LANGUAGE_STORE_KEY = "dj_trakt_fork_media_language";
 +const LANGUAGE_STORE_MAX_ENTRIES = 3000;
++// 评论记录单独存放：一页评论可能有上百条，和语言记录放在一起会把语言记录挤掉
++const COMMENT_STORE_KEY = "dj_trakt_fork_comment_scope";
++const COMMENT_STORE_MAX_ENTRIES = 3000;
++const LEGACY_COMMENT_KEY_PREFIX = "comment:";
 +const LANGUAGE_FETCH_LIMIT = 10;
 +const OUT_OF_SCOPE_MARK = "-";
++// 「未知」标记写成 "?<到期秒数>"；normalizeLanguage 不认它，所以读到时按语言未知（照常翻译）处理
++const UNKNOWN_LANGUAGE_PREFIX = "?";
++const UNKNOWN_LANGUAGE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 +
 +function isChineseOnlyEnabled() {
 +    return globalThis.$ctx?.argument?.chineseOnlyTranslation !== false;
++}
++
++function isChinesePosterEnabled() {
++    return globalThis.$ctx?.argument?.chinesePosterEnabled === true;
++}
++
++// 「中文影视用中文原海报」需要事先知道语言：「海报语言」本身是原片语言时结果相同，不必额外查询
++function needsLanguageForPoster() {
++    return isChinesePosterEnabled() && globalThis.$ctx?.argument?.posterImageMode !== "original";
 +}
 +
 +function normalizeLanguage(value) {
@@ -595,55 +1797,25 @@ index 0000000..d8df9d0
 +    return normalized ? CHINESE_LANGUAGES.has(normalized) : null;
 +}
 +
-+// ---------- 本地语言记录 ----------
++// ---------- 本地记录（语言、评论各一份，按写入先后淘汰最旧的） ----------
 +
-+function getLanguageState() {
-+    const context = globalThis.$ctx;
-+    if (!context) {
-+        return { store: {}, dirty: false };
-+    }
-+    if (!context.__translationScopeLanguages) {
-+        let store = {};
-+        try {
-+            store = commonUtils.ensureObject(context.env?.getjson(LANGUAGE_STORE_KEY, {}));
-+        } catch {
-+            store = {};
++const languageStore = createForkStore({
++    key: LANGUAGE_STORE_KEY,
++    max: LANGUAGE_STORE_MAX_ENTRIES,
++    // 旧版本把评论记录也放在语言记录里，读到时清掉
++    onLoad(store) {
++        const legacyKeys = Object.keys(store).filter((key) => key.startsWith(LEGACY_COMMENT_KEY_PREFIX));
++        for (const key of legacyKeys) {
++            delete store[key];
 +        }
-+        context.__translationScopeLanguages = { store, dirty: false };
-+    }
-+    return context.__translationScopeLanguages;
-+}
-+
-+function writeStoreEntry(key, value) {
-+    if (!key || !value) {
-+        return;
-+    }
-+    const state = getLanguageState();
-+    if (state.store[key] === value) {
-+        return;
-+    }
-+    delete state.store[key];
-+    state.store[key] = value;
-+    state.dirty = true;
-+}
++        return legacyKeys.length > 0;
++    },
++});
++const commentStore = createForkStore({ key: COMMENT_STORE_KEY, max: COMMENT_STORE_MAX_ENTRIES });
 +
 +function flushLanguageStore() {
-+    const state = getLanguageState();
-+    if (!state.dirty) {
-+        return;
-+    }
-+    const keys = Object.keys(state.store);
-+    if (keys.length > LANGUAGE_STORE_MAX_ENTRIES) {
-+        keys.slice(0, keys.length - LANGUAGE_STORE_MAX_ENTRIES).forEach((key) => {
-+            delete state.store[key];
-+        });
-+    }
-+    try {
-+        globalThis.$ctx?.env?.setjson(state.store, LANGUAGE_STORE_KEY);
-+        state.dirty = false;
-+    } catch (error) {
-+        globalThis.$ctx?.env?.log?.(`Trakt chinese-only language store save failed: ${error}`);
-+    }
++    languageStore.flush();
++    commentStore.flush();
 +}
 +
 +function buildMediaKey(mediaType, idOrSlug) {
@@ -658,13 +1830,24 @@ index 0000000..d8df9d0
 +    if (!normalized) {
 +        return;
 +    }
-+    writeStoreEntry(buildMediaKey(mediaType, media?.ids?.trakt), normalized);
-+    writeStoreEntry(buildMediaKey(mediaType, media?.ids?.slug), normalized);
++    languageStore.write(buildMediaKey(mediaType, media?.ids?.trakt), normalized);
++    languageStore.write(buildMediaKey(mediaType, media?.ids?.slug), normalized);
 +}
 +
 +function recallMediaLanguage(mediaType, idOrSlug) {
 +    const key = buildMediaKey(mediaType, idOrSlug);
-+    return key ? (getLanguageState().store[key] ?? "") : "";
++    const value = languageStore.read(key);
++    if (!value.startsWith(UNKNOWN_LANGUAGE_PREFIX)) {
++        return value;
++    }
++    // 「未知」标记过期后当作没查过，下次重新查询
++    const expiresAt = Number(value.slice(UNKNOWN_LANGUAGE_PREFIX.length)) * 1000;
++    return Number.isFinite(expiresAt) && expiresAt > Date.now() ? value : "";
++}
++
++function markMediaLanguageUnknown(mediaType, idOrSlug) {
++    const expiresAt = Math.ceil((Date.now() + UNKNOWN_LANGUAGE_TTL_MS) / 1000);
++    languageStore.write(buildMediaKey(mediaType, idOrSlug), `${UNKNOWN_LANGUAGE_PREFIX}${expiresAt}`);
 +}
 +
 +async function fetchMediaLanguage(mediaType, idOrSlug) {
@@ -672,8 +1855,11 @@ index 0000000..d8df9d0
 +        const detail = await traktApiClient.fetchMediaDetail(mediaType, idOrSlug);
 +        const language = normalizeLanguage(detail?.language);
 +        if (language) {
-+            writeStoreEntry(buildMediaKey(mediaType, idOrSlug), language);
++            languageStore.write(buildMediaKey(mediaType, idOrSlug), language);
 +            rememberMediaLanguage(mediaType, detail, language);
++        } else if (commonUtils.isPlainObject(detail)) {
++            // 拿到了详情但没有语言：记「未知」，一段时间内不再查
++            markMediaLanguageUnknown(mediaType, idOrSlug);
 +        }
 +        return language;
 +    } catch (error) {
@@ -685,7 +1871,7 @@ index 0000000..d8df9d0
 +async function resolveMediaLanguage(mediaType, idOrSlug, knownLanguage = null) {
 +    const known = normalizeLanguage(knownLanguage);
 +    if (known) {
-+        writeStoreEntry(buildMediaKey(mediaType, idOrSlug), known);
++        languageStore.write(buildMediaKey(mediaType, idOrSlug), known);
 +        return known;
 +    }
 +    const recalled = recallMediaLanguage(mediaType, idOrSlug);
@@ -729,9 +1915,9 @@ index 0000000..d8df9d0
 +    );
 +}
 +
-+// 返回需要处理的条目（中文原片或语言未知）；其他条目调用方不应触碰
++// 返回需要翻译文字的条目（中文或语言未知）；其他条目的文字调用方不应触碰
 +async function filterItemsInScope(items) {
-+    if (!isChineseOnlyEnabled() || commonUtils.isNotArray(items)) {
++    if (commonUtils.isNotArray(items) || (!isChineseOnlyEnabled() && !needsLanguageForPoster())) {
 +        return items;
 +    }
 +
@@ -758,10 +1944,42 @@ index 0000000..d8df9d0
 +    );
 +    flushLanguageStore();
 +
-+    return items.filter((item, index) => {
++    if (!isChineseOnlyEnabled()) {
++        return items;
++    }
++    return items.filter((_item, index) => {
 +        const source = sources[index];
 +        return !source || isChineseLanguage(getSourceLanguage(source)) !== false;
 +    });
++}
++
++// ---------- 海报 ----------
++
++// 「中文影视用中文原海报」：中文影视返回 "original"（原片语言 = 中文，优先原产地区版本）；否则 null，由调用方用「海报语言」
++// 只读已知语言（响应自带或本地记录），不发请求；语言未知时按「海报语言」处理
++function getChinesePosterMode(mediaType, media, knownLanguage = null) {
++    if (!isChinesePosterEnabled()) {
++        return null;
++    }
++    const ids = commonUtils.isPlainObject(media) ? media.ids : null;
++    const language =
++        normalizeLanguage(knownLanguage) ||
++        normalizeLanguage(commonUtils.isPlainObject(media) ? media.language : null) ||
++        recallMediaLanguage(mediaType, ids ? ids.trakt : media) ||
++        (ids ? recallMediaLanguage(mediaType, ids.slug) : "");
++    return isChineseLanguage(language) === true ? "original" : null;
++}
++
++// 季列表等只有剧集 ID 的场景：本地没有语言记录时补查一次（仅在需要时）
++async function resolveChinesePosterMode(mediaType, idOrSlug, knownLanguage = null) {
++    if (!isChinesePosterEnabled()) {
++        return null;
++    }
++    const language = needsLanguageForPoster()
++        ? await resolveMediaLanguage(mediaType, idOrSlug, knownLanguage)
++        : normalizeLanguage(knownLanguage) || recallMediaLanguage(mediaType, idOrSlug);
++    flushLanguageStore();
++    return isChineseLanguage(language) === true ? "original" : null;
 +}
 +
 +// ---------- 评论 ----------
@@ -775,11 +1993,13 @@ index 0000000..d8df9d0
 +}
 +
 +function markCommentsOutOfScope(commentIds) {
-+    commentIds.forEach((id) => writeStoreEntry(`comment:${id}`, OUT_OF_SCOPE_MARK));
++    for (const id of commentIds) {
++        commentStore.write(String(id), OUT_OF_SCOPE_MARK);
++    }
 +}
 +
 +function isCommentOutOfScope(commentId) {
-+    return getLanguageState().store[`comment:${commentId}`] === OUT_OF_SCOPE_MARK;
++    return commentStore.read(String(commentId)) === OUT_OF_SCOPE_MARK;
 +}
 +
 +// ---------- 响应阶段放行 ----------
@@ -798,8 +2018,9 @@ index 0000000..d8df9d0
 +    { pattern: /^(movies|shows)\/(\d+)\/videos$/i },
 +];
 +
-+// 人物页：由「人物页翻译」开关决定
-+const PEOPLE_ROUTES = [/^people\/[a-z0-9-]+$/i, /^search\/person$/i, /^people\/this_month$/i];
++// 人物页（「人物页翻译」）和人物搜索/人物列表（「人物搜索翻译」）各由一个开关决定
++const PERSON_PAGE_ROUTES = [/^people\/(?!this_month$)[a-z0-9-]+$/i];
++const PERSON_SEARCH_ROUTES = [/^search\/person$/i, /^people\/this_month$/i];
 +
 +// 片单名称和描述：不属于某个影视，不处理
 +const UNBOUND_ROUTES = [
@@ -821,17 +2042,26 @@ index 0000000..d8df9d0
 +
 +// 响应阶段：返回 true 表示原样放行，不交给后续处理
 +async function shouldBypassResponse(context) {
-+    if (!isChineseOnlyEnabled() || !isTraktApiHost(context)) {
++    if (!isTraktApiHost(context)) {
 +        return false;
 +    }
 +    const path = String(context.url.shortPathname ?? "");
 +
-+    if (UNBOUND_ROUTES.some((pattern) => pattern.test(path))) {
-+        return true;
++    // 人物开关不依赖「只翻译中文影视」，单独生效
++    if (PERSON_SEARCH_ROUTES.some((pattern) => pattern.test(path))) {
++        return getPersonSearchMode() === PERSON_SEARCH_MODE.OFF;
 +    }
 +
-+    if (PEOPLE_ROUTES.some((pattern) => pattern.test(path))) {
++    if (PERSON_PAGE_ROUTES.some((pattern) => pattern.test(path))) {
 +        return globalThis.$ctx?.argument?.peopleTranslationEnabled === false;
++    }
++
++    if (!isChineseOnlyEnabled()) {
++        return false;
++    }
++
++    if (UNBOUND_ROUTES.some((pattern) => pattern.test(path))) {
++        return true;
 +    }
 +
 +    const commentMatch = path.match(/^comments\/(\d+)(?:\/replies)?$/i);
@@ -867,7 +2097,30 @@ index 0000000..d8df9d0
 +    return inScope;
 +}
 +
-+export { filterItemsInScope, filterRecentCommentItems, isChineseLanguage, isChineseOnlyEnabled, isMediaInScope, rememberMediaLanguage, shouldBypassResponse };
++export {
++    filterItemsInScope,
++    filterRecentCommentItems,
++    getChinesePosterMode,
++    isChineseLanguage,
++    isChineseOnlyEnabled,
++    isChinesePosterEnabled,
++    isMediaInScope,
++    rememberMediaLanguage,
++    resolveChinesePosterMode,
++    shouldBypassResponse,
++};
+diff --git a/trakt_simplified_chinese/src/utils/cache.mjs b/trakt_simplified_chinese/src/utils/cache.mjs
+index 38b88d6..16b1465 100644
+--- a/trakt_simplified_chinese/src/utils/cache.mjs
++++ b/trakt_simplified_chinese/src/utils/cache.mjs
+@@ -1237,6 +1237,7 @@ export {
+     getAuthToken,
+     getCurrentSeason,
+     getHashedFieldTranslation,
++    isLocalCacheDisabled,
+     loadCache,
+     loadCommentTranslationCache,
+     loadDoubanCache,
 -- 
 2.43.0
 
