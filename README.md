@@ -22,4 +22,4 @@ https://raw.githubusercontent.com/lucere30/trakt-enhance/main/trakt_simplified_c
 - 新增选项「人物搜索翻译」（默认全部翻译）：人物搜索（含本月生日人物列表）翻译谁——全部翻译 / 华人和日韩名 / 仅华人名 / 关闭
 - 以上两项单独生效，不受「只翻译中文影视」影响
 
-GitHub Actions 每 3 天自动拉取上游、重新构建并更新这些文件，详见 [`fork/README.md`](fork/README.md)。
+GitHub Actions 每天自动拉取上游、重新构建并更新这些文件，详见 [`fork/README.md`](fork/README.md)。
