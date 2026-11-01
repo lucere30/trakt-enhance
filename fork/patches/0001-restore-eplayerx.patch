@@ -1,4 +1,4 @@
-From 88d1df75c8630b396742cd47942a3dc3a70adad0 Mon Sep 17 00:00:00 2001
+From f77b124d17d35b78fc0848563eadc97a0fbd433b Mon Sep 17 00:00:00 2001
 From: lucere30 <sunsetseaside@outlook.com>
 Date: Wed, 30 Sep 2026 09:58:22 +0000
 Subject: [PATCH] =?UTF-8?q?feat(trakt):=20=E5=A4=8D=E5=8E=9F=20EplayerX=20?=
@@ -14,8 +14,6 @@ Content-Transfer-Encoding: 8bit
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01YH4kK6jKSf8gmN4WbmGa5W
 ---
- README.md                                     |   2 +-
- public/index.html                             |   2 +-
  tests/trakt_argument.test.mjs                 |  77 +++++++++--------
  tests/trakt_live_script.test.mjs              |   4 +-
  tests/trakt_script_routes.test.mjs            |  49 ++++++-----
@@ -26,38 +24,12 @@ Claude-Session: https://claude.ai/code/session_01YH4kK6jKSf8gmN4WbmGa5W
  .../features/player-injection-sofatime.mjs    |   1 +
  .../src/module-manifest.mjs                   |  35 +++++---
  .../src/shared/player-definitions.mjs         |  38 ++++++++
- 12 files changed, 205 insertions(+), 92 deletions(-)
+ 10 files changed, 203 insertions(+), 90 deletions(-)
  create mode 100644 trakt_simplified_chinese/images/eplayerx.webp
  create mode 100644 trakt_simplified_chinese/images/eplayerx_logo.webp
 
-diff --git a/README.md b/README.md
-index c7ac767..b830532 100644
---- a/README.md
-+++ b/README.md
-@@ -6,7 +6,7 @@
- 
- | 脚本                       | 说明                                              | Loon                       | Surge                          | Quantumult X                 |
- | -------------------------- | ------------------------------------------------- | -------------------------- | ------------------------------ | ---------------------------- |
--| Trakt Simplified Chinese   | 优先补全和显示 Trakt 的中文标题、简介等内容（简体 / 台湾繁体 / 香港繁体），海报语言可选中文地区，并在影片详情页添加 Forward、Infuse、Rex 跳转按钮 | [`.plugin`][trakt-plugin] | [`.sgmodule`][trakt-sgmodule] | [`.snippet`][trakt-snippet] |
-+| Trakt Simplified Chinese   | 优先补全和显示 Trakt 的中文标题、简介等内容（简体 / 台湾繁体 / 香港繁体），海报语言可选中文地区，并在影片详情页添加 EplayerX、Forward、Infuse、Rex 跳转按钮 | [`.plugin`][trakt-plugin] | [`.sgmodule`][trakt-sgmodule] | [`.snippet`][trakt-snippet] |
- | Fix Infuse Image Language  | 调整 TMDB 图片语言排序，改善 Infuse 图片语言匹配  | [`.plugin`][infuse-plugin] | [`.sgmodule`][infuse-sgmodule] | [`.snippet`][infuse-snippet] |
- | IMDB API Redirect to tiffara | 将 imdbapi.dev 及其所有子域名重定向到 tiffara.com | [`.plugin`][imdb-plugin]   | [`.sgmodule`][imdb-sgmodule]   | [`.snippet`][imdb-snippet]   |
- 
-diff --git a/public/index.html b/public/index.html
-index ffc5423..2af8df5 100644
---- a/public/index.html
-+++ b/public/index.html
-@@ -525,7 +525,7 @@
-                     id: "trakt_simplified_chinese",
-                     name: "Trakt 增强",
-                     description:
--                        "Trakt App 各页面从英文改为简体中文或港台繁体，包括海报；历史页面剧集类别的已观看记录按电视剧合并；Trakt 的影片详情页添加 Forward、Infuse、Rex 跳转按钮；部分兼容其它使用了 Trakt API 的应用。",
-+                        "Trakt App 各页面从英文改为简体中文或港台繁体，包括海报；历史页面剧集类别的已观看记录按电视剧合并；Trakt 的影片详情页添加 EplayerX、Forward、Infuse、Rex 跳转按钮；部分兼容其它使用了 Trakt API 的应用。",
-                     qxTag: "Trakt Simplified Chinese",
-                     icon: "https://raw.githubusercontent.com/DemoJameson/Proxy.Modules/main/trakt_simplified_chinese/images/trakt.webp",
-                     githubFolder: "https://github.com/DemoJameson/Proxy.Modules/tree/main/trakt_simplified_chinese",
 diff --git a/tests/trakt_argument.test.mjs b/tests/trakt_argument.test.mjs
-index 71b9c94..9892e3a 100644
+index 16d4bba..8ba8f0b 100644
 --- a/tests/trakt_argument.test.mjs
 +++ b/tests/trakt_argument.test.mjs
 @@ -13,19 +13,20 @@ import { DEEPLX_TRANSLATE_API_URL as DEEPLX_TRANSLATE_URL } from "../trakt_simpl
@@ -239,7 +211,7 @@ index 71b9c94..9892e3a 100644
              infuseButtonOrder: 0,
              rexButtonOrder: 0,
 diff --git a/tests/trakt_live_script.test.mjs b/tests/trakt_live_script.test.mjs
-index 47202eb..61aa370 100644
+index 51d3f19..463c6d7 100644
 --- a/tests/trakt_live_script.test.mjs
 +++ b/tests/trakt_live_script.test.mjs
 @@ -424,9 +424,9 @@ test("live script: /movies/:id/watchnow 响应会注入自定义播放器条目"
@@ -265,7 +237,7 @@ index 47202eb..61aa370 100644
  
  test("live script: /users/me/watchlist/movies 会走登录态列表翻译链路", async (t) => {
 diff --git a/tests/trakt_script_routes.test.mjs b/tests/trakt_script_routes.test.mjs
-index c9e5b88..5288997 100644
+index 48465bc..932ac44 100644
 --- a/tests/trakt_script_routes.test.mjs
 +++ b/tests/trakt_script_routes.test.mjs
 @@ -408,16 +408,16 @@ test("TMDB tv 详情只保留注入播放器并清除原有观看来源", async
@@ -420,7 +392,7 @@ index c9e5b88..5288997 100644
  });
  
 diff --git a/tests/trakt_script_watchnow.test.mjs b/tests/trakt_script_watchnow.test.mjs
-index 87acde4..245d5c8 100644
+index e9fbdf3..7a75621 100644
 --- a/tests/trakt_script_watchnow.test.mjs
 +++ b/tests/trakt_script_watchnow.test.mjs
 @@ -41,7 +41,7 @@ test("/users/settings 会注入 vip 标记、广告标记和 watchnow favorites"
@@ -1137,7 +1109,7 @@ index b03f21c..d578883 100644
      [playerDefinitions.PLAYER_TYPE.INFUSE]: 3,
      [playerDefinitions.PLAYER_TYPE.REX]: 4,
 diff --git a/trakt_simplified_chinese/src/module-manifest.mjs b/trakt_simplified_chinese/src/module-manifest.mjs
-index d6f5c6a..d813052 100644
+index e30bc66..38169fa 100644
 --- a/trakt_simplified_chinese/src/module-manifest.mjs
 +++ b/trakt_simplified_chinese/src/module-manifest.mjs
 @@ -8,7 +8,7 @@ const DEFAULT_BACKEND_BASE_URL = "https://proxy-modules.demojameson.de5.net";

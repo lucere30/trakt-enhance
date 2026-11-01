@@ -1,6 +1,16 @@
 # 定制与上游同步
 
-本仓库只发布 Loon 版「Trakt 增强」插件，脚本来自 [DemoJameson/Proxy.Modules](https://github.com/DemoJameson/Proxy.Modules)（MIT 许可）。
+本仓库只发布 Loon 版「Trakt 增强」插件，脚本来自 [DemoJameson/Proxy.Modules](https://github.com/DemoJameson/Proxy.Modules) 2026-10-28 的版本 `c652548`（MIT 许可）。
+
+## 为什么停在 MIT 版本
+
+2026-10-30 上游改用「Proxy.Modules Source-Available License 1.0」，并改写了全部提交历史（在 9 月插入「chore: 修改协议」后重排了之后的提交）。新许可只适用于 10-30 及以后发布的版本，之前的版本仍是 MIT；它不允许 EplayerX 的作者和用户使用这些脚本，而本仓库的第一项定制就是复原 EplayerX 跳转按钮。
+
+所以本仓库固定在最后一个 MIT 版本 `c652548`（fix(trakt): 兼容 following activities 的 /v3 前缀路由），不再跟随上游：
+
+- 这份上游代码保存在本仓库的 `upstream-mit` 分支，同步从这里取，不依赖上游仓库是否还在、历史是否再被改写。
+- `fork.config.json` 的 `requiredLicense` 要求底稿 `LICENSE` 第一行是 `MIT License`，否则 `sync.sh` 拒绝构建。以后即使误把底稿换成新许可的版本，也不会发布出去。
+- 上游 10-30 之后的修复（官方 App Universal Link 授权回调、EplayerX 授权例外等）和依赖更新不会进来。
 
 ## 仓库里有什么
 
@@ -9,7 +19,7 @@
 | `trakt_simplified_chinese/trakt_simplified_chinese.plugin` | Loon 插件（自动生成） |
 | `trakt_simplified_chinese/trakt_simplified_chinese.js` | 插件加载的脚本（自动生成） |
 | `trakt_simplified_chinese/images/` | 图标与播放器 logo（来自上游） |
-| `LICENSE` | 上游 MIT 许可证，按许可要求保留 |
+| `LICENSE` | `c652548` 的 MIT 许可证，按许可要求保留 |
 | `README.md`、`fork/`、`.github/` | 本仓库自己维护的说明、定制和同步工作流 |
 
 其余上游文件（源码、测试、Surge/QX 版本、后端等）只在同步构建时临时使用，不提交到本仓库。
@@ -39,11 +49,11 @@
    这个补丁自带的测试列在 `fork.config.json` 的 `extraTests` 里，同步时一起运行。
 4. **插件选项显示顺序**（`argument-order.mjs`）：按 `fork.config.json` 的 `argumentOrder` 调整 Loon 插件 `[Argument]` 段的上下顺序（伪装成 VIP → 翻译 → 显示 → 跳转按钮 → 高级）。只改显示顺序，传给脚本的参数顺序不变；上游新增的选项自动排在最后。
 
-## 自动同步
+## 同步
 
-`.github/workflows/sync-upstream.yml` 每天运行一次（北京时间 08:23；也可在 Actions 页面手动运行），执行 `fork/sync.sh`：
+`.github/workflows/sync-upstream.yml` 每天运行一次（北京时间 08:23；也可在 Actions 页面手动运行），执行 `fork/sync.sh`。底稿固定不变，所以只有本仓库的定制（`fork/`、`README.md`、`.github/`）改动后才会重新构建，其余时候直接跳过：
 
-1. 拉取上游 `main` 的完整代码；
+1. 拉取 `upstream-mit` 分支（上游 `c652548`），确认它的 `LICENSE` 是 MIT；
 2. 按顺序重放 `fork/patches/*.patch`（3-way 合并）；
 3. 运行 `localize.mjs` 改写链接；
 4. `npm ci && npm test`，其中会重新生成插件和脚本；
@@ -52,20 +62,19 @@
 
 任何一步失败，`main` 保持不变，并自动开一个标题为「上游同步失败，需要处理」的 issue。
 
-公开仓库 60 天没有活动时 GitHub 会自动停用定时任务。为防止上游长期不更新导致同步停掉，定时运行时会调用一次“启用工作流”接口，并在最近一次提交超过 45 天时推一个空的 `chore: 保活` 提交。如果仍被停用，到 Actions 页面点 “Enable workflow” 即可恢复。
+公开仓库 60 天没有活动时 GitHub 会自动停用定时任务。为防止长期没有新提交导致同步停掉，定时运行时会调用一次“启用工作流”接口，并在最近一次提交超过 45 天时推一个空的 `chore: 保活` 提交。如果仍被停用，到 Actions 页面点 “Enable workflow” 即可恢复。
 
 `fork/sync-state` 记录当前对应的上游提交和本仓库文件指纹，两者都没变时直接跳过（生成的脚本带构建时间，不能用产物是否变化来判断）。本地强制重建：`FORCE_SYNC=1 bash fork/sync.sh`。
 
-## 补丁冲突时如何更新
+## 修改定制
 
-上游改动了补丁涉及的代码时会冲突，需要手动合并后更新补丁（以 0001 为例，0002 同理；有多个补丁时按编号依次打上，只重新导出冲突的那个）：
+补丁都基于 `upstream-mit`。改完补丁推送到 `main` 后，在 Actions 页面手动运行一次「跟随上游同步」（或等第二天的定时运行）。以 0001 为例（0002 同理，有多个补丁时按编号依次打上，只重新导出改动的那个）：
 
 ```bash
 git clone https://github.com/lucere30/trakt-enhance.git && cd trakt-enhance
-cp fork/patches/0001-restore-eplayerx.patch /tmp/old.patch
-git fetch https://github.com/DemoJameson/Proxy.Modules.git main
-git switch --detach FETCH_HEAD
-git apply --3way /tmp/old.patch   # 冲突处 ours=上游、theirs=本仓库定制，合并后 git add
+git switch --detach origin/upstream-mit
+git apply --3way fork/patches/0001-restore-eplayerx.patch
+# 修改源码……
 npm ci && npm test                # 确认通过
 git add -A && git commit -m "restore eplayerx"
 # 只导出源码改动（不含构建产物）作为新补丁：
@@ -80,7 +89,7 @@ cp /tmp/new.patch fork/patches/0001-restore-eplayerx.patch
 git commit -am "fork: 更新 EplayerX 补丁" && git push
 ```
 
-推送后在 Actions 页面手动运行一次「跟随上游同步」。
+补丁只改会进入插件的源码和测试；上游的 `README.md`、`public/index.html` 不发布，不用改。
 
 ## 仍然依赖上游的在线服务
 
@@ -88,3 +97,5 @@ git commit -am "fork: 更新 EplayerX 补丁" && git push
 
 - `proxy-modules.demojameson.de5.net`：翻译缓存后端，也负责下发 TMDb key（可在插件参数「翻译缓存接口」里改成自己部署的地址，部署方法见上游 `DEPLOY_VERCEL.md`）
 - `deeplx.demojameson.de5.net`：DeepLX 翻译
+
+这些服务由上游作者运营，不在 MIT 许可范围内；作者随时可能限制或停用（上游已给后端脚本接口加了 UA 锁），届时翻译缓存、TMDb 海报和 DeepLX 会失效，需要自己部署后端并在「翻译缓存接口」里填上地址。

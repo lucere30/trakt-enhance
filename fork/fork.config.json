@@ -1,6 +1,7 @@
 {
-    "upstreamUrl": "https://github.com/DemoJameson/Proxy.Modules.git",
-    "upstreamBranch": "main",
+    "upstreamUrl": "https://github.com/lucere30/trakt-enhance.git",
+    "upstreamBranch": "upstream-mit",
+    "requiredLicense": "MIT License",
     "upstreamRepo": "DemoJameson/Proxy.Modules",
     "repo": "lucere30/trakt-enhance",
     "branch": "main",

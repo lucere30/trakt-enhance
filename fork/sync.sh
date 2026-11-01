@@ -18,6 +18,8 @@ REPORT="${SYNC_REPORT:-${RUNNER_TEMP:-/tmp}/fork-sync-report.md}"
 cfg() { node -p "require('./fork/fork.config.json').$1"; }
 UPSTREAM_URL="$(cfg upstreamUrl)"
 UPSTREAM_BRANCH="$(cfg upstreamBranch)"
+# 底稿 LICENSE 第一行必须是这个值，否则拒绝构建（见 fork/README.md「为什么停在 MIT 版本」）
+REQUIRED_LICENSE="$(node -p "require('./fork/fork.config.json').requiredLicense || ''")"
 
 out() { if [ -n "${GITHUB_OUTPUT:-}" ]; then echo "$1" >> "$GITHUB_OUTPUT"; fi; echo "$1"; }
 
@@ -50,6 +52,19 @@ cleanup() { cd "$ROOT"; git worktree remove --force "$WT" >/dev/null 2>&1 || rm 
 trap cleanup EXIT
 git worktree add --quiet --detach "$WT" "$UP_SHA"
 cd "$WT"
+
+if [ -n "$REQUIRED_LICENSE" ] && [ "$(head -n 1 LICENSE 2>/dev/null)" != "$REQUIRED_LICENSE" ]; then
+    {
+        echo "## 上游同步失败：底稿许可不符"
+        echo
+        echo "- 底稿：\`$UPSTREAM_URL\` 的 \`$UPSTREAM_BRANCH\`（\`$UP_SHA\`）"
+        echo "- LICENSE 第一行：\`$(head -n 1 LICENSE 2>/dev/null)\`，要求：\`$REQUIRED_LICENSE\`"
+        echo
+        echo "本仓库只从 MIT 版本构建（见 fork/README.md）。main 分支未改动。"
+    } >> "$REPORT"
+    echo "底稿许可不符：$(head -n 1 LICENSE 2>/dev/null)"
+    exit 1
+fi
 
 # 上游自己的 .github 不带进来（本仓库只保留自己的工作流）
 git rm -r -q --cached --ignore-unmatch .github
