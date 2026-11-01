@@ -1,4 +1,4 @@
-From f77b124d17d35b78fc0848563eadc97a0fbd433b Mon Sep 17 00:00:00 2001
+From f19f31042318dd5fcb49fb1a664f060c7e83506b Mon Sep 17 00:00:00 2001
 From: lucere30 <sunsetseaside@outlook.com>
 Date: Wed, 30 Sep 2026 09:58:22 +0000
 Subject: [PATCH] =?UTF-8?q?feat(trakt):=20=E5=A4=8D=E5=8E=9F=20EplayerX=20?=
@@ -14,6 +14,7 @@ Content-Transfer-Encoding: 8bit
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01YH4kK6jKSf8gmN4WbmGa5W
 ---
+ public/index.html                             |   2 +-
  tests/trakt_argument.test.mjs                 |  77 +++++++++--------
  tests/trakt_live_script.test.mjs              |   4 +-
  tests/trakt_script_routes.test.mjs            |  49 ++++++-----
@@ -24,10 +25,23 @@ Claude-Session: https://claude.ai/code/session_01YH4kK6jKSf8gmN4WbmGa5W
  .../features/player-injection-sofatime.mjs    |   1 +
  .../src/module-manifest.mjs                   |  35 +++++---
  .../src/shared/player-definitions.mjs         |  38 ++++++++
- 10 files changed, 203 insertions(+), 90 deletions(-)
+ 11 files changed, 204 insertions(+), 91 deletions(-)
  create mode 100644 trakt_simplified_chinese/images/eplayerx.webp
  create mode 100644 trakt_simplified_chinese/images/eplayerx_logo.webp
 
+diff --git a/public/index.html b/public/index.html
+index ffc5423..2af8df5 100644
+--- a/public/index.html
++++ b/public/index.html
+@@ -525,7 +525,7 @@
+                     id: "trakt_simplified_chinese",
+                     name: "Trakt 增强",
+                     description:
+-                        "Trakt App 各页面从英文改为简体中文或港台繁体，包括海报；历史页面剧集类别的已观看记录按电视剧合并；Trakt 的影片详情页添加 Forward、Infuse、Rex 跳转按钮；部分兼容其它使用了 Trakt API 的应用。",
++                        "Trakt App 各页面从英文改为简体中文或港台繁体，包括海报；历史页面剧集类别的已观看记录按电视剧合并；Trakt 的影片详情页添加 EplayerX、Forward、Infuse、Rex 跳转按钮；部分兼容其它使用了 Trakt API 的应用。",
+                     qxTag: "Trakt Simplified Chinese",
+                     icon: "https://raw.githubusercontent.com/DemoJameson/Proxy.Modules/main/trakt_simplified_chinese/images/trakt.webp",
+                     githubFolder: "https://github.com/DemoJameson/Proxy.Modules/tree/main/trakt_simplified_chinese",
 diff --git a/tests/trakt_argument.test.mjs b/tests/trakt_argument.test.mjs
 index 16d4bba..8ba8f0b 100644
 --- a/tests/trakt_argument.test.mjs

@@ -89,7 +89,7 @@ cp /tmp/new.patch fork/patches/0001-restore-eplayerx.patch
 git commit -am "fork: 更新 EplayerX 补丁" && git push
 ```
 
-补丁只改会进入插件的源码和测试；上游的 `README.md`、`public/index.html` 不发布，不用改。
+补丁只改会进入插件的源码和测试；上游的 `README.md` 不发布，不用改。`public/index.html` 也不发布，但上游测试要求它的模块描述和插件描述一致，所以描述改了要一起改。
 
 ## 仍然依赖上游的在线服务
 
