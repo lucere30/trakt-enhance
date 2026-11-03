@@ -3,29 +3,17 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-        <title>Lantern Reel · 放映厅</title>
-        <meta name="description" content="老胶片放映：一帧剧照，一句台词，一段按情绪生成的配乐。" />
-        <meta name="color-scheme" content="dark" />
-        <meta name="theme-color" content="#0b0a09" />
+        <title>海风 · Lantern Reel</title>
+        <meta name="description" content="站在沙滩上看海：浪花、风和夕阳。" />
+        <meta name="color-scheme" content="light" />
+        <meta name="theme-color" content="#d9c3a0" />
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-        <link rel="stylesheet" href="/leader.css" />
+        <link rel="stylesheet" href="/beach.css" />
     </head>
     <body>
-        <canvas id="film" aria-hidden="true"></canvas>
-
-        <main id="card" class="card" aria-live="polite">
-            <p class="reel" id="reel"></p>
-            <blockquote>
-                <p class="line" id="line"></p>
-                <p class="original" id="original"></p>
-            </blockquote>
-            <p class="source" id="source"></p>
-            <p class="credit">剧照来自 TMDB · 本站使用 TMDB API，但未获 TMDB 认可或认证</p>
-        </main>
-
-        <button id="sound" class="sound" type="button" aria-pressed="false">配乐 · 关</button>
-        <button id="roll" class="roll" type="button">放映下一卷</button>
-        <script src="/score.js" defer></script>
-        <script src="/leader.js" defer></script>
+        <canvas id="sea" aria-label="海边的沙滩，风吹着沙丘草，浪一遍遍冲上沙滩" role="img"></canvas>
+        <canvas id="air" aria-hidden="true"></canvas>
+        <button id="sound" class="sound" type="button" aria-pressed="false">海浪 · 关</button>
+        <script src="/beach.js" defer></script>
     </body>
 </html>

@@ -1,0 +1,53 @@
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    -webkit-text-size-adjust: 100%;
+    /* WebGL 不可用时的兜底：天、海、沙三段渐变 */
+    background: linear-gradient(#5b86c4 0%, #e6d2b6 44%, #2c6f7a 46%, #4aa2a0 62%, #d9c3a0 70%, #cdb38a 100%);
+}
+
+canvas {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.no-webgl #sea {
+    display: none;
+}
+
+.sound {
+    position: fixed;
+    top: max(16px, env(safe-area-inset-top));
+    right: max(16px, env(safe-area-inset-right));
+    min-height: 36px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    background: rgba(255, 255, 255, 0.22);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", sans-serif;
+    font-size: 13px;
+    letter-spacing: 0.15em;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+    cursor: pointer;
+}
+
+.sound[aria-pressed="true"] {
+    background: rgba(255, 255, 255, 0.4);
+}
+
+.sound:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 3px;
+}
