@@ -1,36 +1,26 @@
-// 放映厅：老胶片片头倒计时（8 → 3），然后投出一张台词字幕卡。点一下换下一卷。
-// 纯本地绘制，不请求任何外部资源；系统开启「减弱动态效果」时跳过动画。
+// 放映厅：老胶片片头倒计时（5 → 3），然后投出一帧剧照和一张台词字幕卡。点一下换下一卷。
+// 台词和剧照地址来自 /films.json（部署时由 scripts/build-films.mjs 生成），剧照直接从 TMDb 图片服务器加载；
+// 系统开启「减弱动态效果」时跳过动画。
 (() => {
-    const QUOTES = [
-        { line: "愿原力与你同在。", original: "May the Force be with you.", source: "《星球大战》1977" },
-        {
-            line: "人生就像一盒巧克力，你永远不知道下一块是什么味道。",
-            original: "Life was like a box of chocolates. You never know what you're gonna get.",
-            source: "《阿甘正传》1994",
-        },
-        { line: "我会回来的。", original: "I'll be back.", source: "《终结者》1984" },
-        { line: "出来混，迟早要还的。", original: "", source: "《无间道》2002" },
-        { line: "曾经发生过的事情不可能忘记，只不过是想不起来而已。", original: "", source: "《千与千寻》2001" },
-        { line: "何必那么严肃？", original: "Why so serious?", source: "《蝙蝠侠：黑暗骑士》2008" },
-        { line: "飞向宇宙，浩瀚无垠！", original: "To infinity and beyond!", source: "《玩具总动员》1995" },
-        { line: "不疯魔，不成活。", original: "", source: "《霸王别姬》1993" },
-        { line: "我们永远会有巴黎。", original: "We'll always have Paris.", source: "《卡萨布兰卡》1942" },
-        { line: "希望是件好东西，也许是世上最好的东西。", original: "Hope is a good thing, maybe the best of things.", source: "《肖申克的救赎》1994" },
-        { line: "如果非要给这份爱加一个期限，我希望是……一万年。", original: "", source: "《大话西游之大圣娶亲》1995" },
-        { line: "毕竟，明天又是新的一天。", original: "After all, tomorrow is another day.", source: "《乱世佳人》1939" },
-    ];
+    // films.json 加载失败时用这一条兜底
+    const FALLBACK_FILMS = [{ line: "毕竟，明天又是新的一天。", original: "After all, tomorrow is another day.", source: "《乱世佳人》1939", still: null }];
 
-    const COUNT_FROM = 8;
+    const COUNT_FROM = 5;
     const COUNT_TO = 3;
-    const BEAT_MS = 1000;
+    const BEAT_MS = 550;
+    const FLASH_MS = 220;
+    const STILL_FADE_MS = 900;
     const FPS = 24;
 
     const canvas = document.getElementById("film");
     const ctx = canvas.getContext("2d");
     const card = document.getElementById("card");
+    const screen = document.getElementById("screen");
     const rollButton = document.getElementById("roll");
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
+    let films = FALLBACK_FILMS;
+    let deck = [];
     let width = 0;
     let height = 0;
     let dpr = 1;
@@ -38,10 +28,11 @@
     let phaseStart = 0;
     let lastFrame = 0;
     let reelNumber = 0;
-    let deck = [];
+    let upcoming = null; // 倒计时期间预加载的下一卷 { film, image }
+    let current = null; // 正在放映的那一卷
     const grainTiles = [];
 
-    // ---------- 准备 ----------
+    // ---------- 数据 ----------
 
     function shuffle(items) {
         const result = items.slice();
@@ -52,12 +43,47 @@
         return result;
     }
 
-    function nextQuote() {
+    function prepareNext() {
         if (deck.length === 0) {
-            deck = shuffle(QUOTES);
+            deck = shuffle(films);
         }
-        return deck.pop();
+        const film = deck.pop();
+        let image = null;
+        if (film.still) {
+            image = new Image();
+            image.decoding = "async";
+            image.referrerPolicy = "no-referrer";
+            image.addEventListener("load", () => {
+                if (reduceMotion.matches && current?.image === image) {
+                    drawProjection(performance.now(), false);
+                }
+            });
+            image.src = film.still;
+        }
+        upcoming = { film, image };
     }
+
+    async function loadFilms() {
+        try {
+            const response = await fetch("/films.json", { cache: "no-cache" });
+            const list = await response.json();
+            const valid = Array.isArray(list) ? list.filter((item) => item && typeof item.line === "string" && typeof item.source === "string") : [];
+            if (valid.length > 0) {
+                films = valid.map((item) => ({
+                    line: item.line,
+                    original: typeof item.original === "string" ? item.original : "",
+                    source: item.source,
+                    // 只接受 TMDb 图片服务器的 https 地址
+                    still: typeof item.still === "string" && item.still.startsWith("https://image.tmdb.org/") ? item.still : null,
+                }));
+            }
+        } catch {
+            // 用兜底的那一条
+        }
+        deck = [];
+    }
+
+    // ---------- 准备 ----------
 
     function makeGrainTiles() {
         const size = 160;
@@ -221,10 +247,45 @@
         drawSprockets(now, 0.9);
 
         // 每一拍刚开始闪一下，像换了一格
-        if (progress < 0.06) {
+        if (progress < 0.08) {
             ctx.fillStyle = "rgba(255,248,232,0.18)";
             ctx.fillRect(0, 0, width, height);
         }
+    }
+
+    // 把剧照按 cover 方式画进字幕卡上方的银幕区域
+    function drawStill(now, animated, flicker) {
+        const image = current?.image;
+        if (!image?.complete || image.naturalWidth === 0) {
+            return;
+        }
+        const rect = screen.getBoundingClientRect();
+        if (rect.width === 0) {
+            return;
+        }
+        const weave = animated ? (Math.random() - 0.5) * 1.6 * dpr : 0;
+        const x = rect.left * dpr;
+        const y = rect.top * dpr + weave;
+        const w = rect.width * dpr;
+        const h = rect.height * dpr;
+        const scale = Math.max(w / image.naturalWidth, h / image.naturalHeight);
+        const sw = w / scale;
+        const sh = h / scale;
+        const sx = (image.naturalWidth - sw) / 2;
+        const sy = (image.naturalHeight - sh) / 2;
+        const fade = animated ? Math.min(1, (now - phaseStart) / STILL_FADE_MS) : 1;
+
+        ctx.save();
+        // 银幕边缘的漏光
+        ctx.shadowColor = `rgba(255,214,150,${0.35 * fade})`;
+        ctx.shadowBlur = 40 * dpr;
+        ctx.fillStyle = "#000";
+        ctx.fillRect(x, y, w, h);
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = fade * flicker;
+        ctx.filter = "sepia(0.35) contrast(1.08) saturate(0.85)";
+        ctx.drawImage(image, sx, sy, sw, sh, x, y, w, h);
+        ctx.restore();
     }
 
     function drawProjection(now, animated) {
@@ -239,32 +300,40 @@
         ctx.fillStyle = glow;
         ctx.fillRect(0, 0, width, height);
 
-        drawGrain(animated ? 0.12 : 0.08);
+        drawStill(now, animated, flicker);
+        drawGrain(animated ? 0.14 : 0.08);
         if (animated) {
-            drawScratches(0.12, 0.25);
+            drawScratches(0.14, 0.28);
         }
-        drawVignette(0.8);
+        drawVignette(0.78);
         drawSprockets(animated ? now : 0, 0.45);
     }
 
     function drawFlash(now) {
-        const t = (now - phaseStart) / 260;
-        ctx.fillStyle = `rgba(255,246,228,${Math.max(0, 1 - t)})`;
+        const t = (now - phaseStart) / FLASH_MS;
         drawProjection(now, true);
+        ctx.fillStyle = `rgba(255,246,228,${Math.max(0, 1 - t)})`;
         ctx.fillRect(0, 0, width, height);
     }
 
     // ---------- 流程 ----------
 
     function showCard() {
-        const quote = nextQuote();
+        if (!upcoming) {
+            prepareNext();
+        }
+        current = upcoming;
+        upcoming = null;
+        const { film } = current;
         reelNumber += 1;
         document.getElementById("reel").textContent = `第 ${reelNumber} 卷 · Reel ${String(reelNumber).padStart(2, "0")}`;
-        document.getElementById("line").textContent = quote.line;
-        document.getElementById("original").textContent = quote.original;
-        document.getElementById("source").textContent = quote.source;
+        document.getElementById("line").textContent = film.line;
+        document.getElementById("original").textContent = film.original;
+        document.getElementById("source").textContent = film.source;
+        screen.hidden = !film.still;
         card.classList.add("show");
         rollButton.classList.add("show");
+        prepareNext();
     }
 
     function startCountdown(now) {
@@ -296,7 +365,7 @@
             }
         }
         if (phase === "flash") {
-            if (now - phaseStart >= 260) {
+            if (now - phaseStart >= FLASH_MS) {
                 phase = "projecting";
             } else {
                 drawFlash(now);
@@ -310,6 +379,7 @@
         const now = performance.now();
         if (reduceMotion.matches) {
             showCard();
+            drawProjection(now, false);
             return;
         }
         if (phase === "countdown") {
@@ -337,12 +407,16 @@
         }
     });
 
+    // 先开始倒计时，片单在倒计时期间加载好，第一卷就能带上剧照
     if (reduceMotion.matches) {
         phase = "projecting";
-        showCard();
-        drawProjection(performance.now(), false);
+        loadFilms().then(() => {
+            showCard();
+            drawProjection(performance.now(), false);
+        });
     } else {
         startCountdown(performance.now());
         requestAnimationFrame(frame);
+        loadFilms().then(prepareNext);
     }
 })();

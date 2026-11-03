@@ -51,8 +51,19 @@ canvas {
     opacity: 1;
 }
 
+.screen {
+    width: min(100%, 560px);
+    aspect-ratio: 16 / 9;
+    margin: 0 0 32px;
+    flex: none;
+}
+
+.screen[hidden] {
+    display: none;
+}
+
 .reel {
-    margin: 0 0 28px;
+    margin: 0 0 24px;
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
     font-size: 12px;
     letter-spacing: 0.4em;
@@ -124,6 +135,19 @@ blockquote {
 .roll:focus-visible {
     outline: 2px solid var(--amber);
     outline-offset: 3px;
+}
+
+.credit {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: max(88px, calc(env(safe-area-inset-bottom) + 64px));
+    margin: 0;
+    padding: 0 48px;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    color: rgba(166, 157, 143, 0.6);
 }
 
 @media (prefers-reduced-motion: reduce) {

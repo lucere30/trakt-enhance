@@ -3,8 +3,8 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-        <title>放映厅</title>
-        <meta name="description" content="一卷老胶片的倒计时，和一句台词。" />
+        <title>Lantern Reel · 放映厅</title>
+        <meta name="description" content="一卷老胶片的倒计时，一帧剧照，和一句台词。" />
         <meta name="color-scheme" content="dark" />
         <meta name="theme-color" content="#0b0a09" />
         <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -14,12 +14,14 @@
         <canvas id="film" aria-hidden="true"></canvas>
 
         <main id="card" class="card" aria-live="polite">
+            <div id="screen" class="screen" hidden></div>
             <p class="reel" id="reel"></p>
             <blockquote>
                 <p class="line" id="line"></p>
                 <p class="original" id="original"></p>
             </blockquote>
             <p class="source" id="source"></p>
+            <p class="credit">剧照来自 TMDB · 本站使用 TMDB API，但未获 TMDB 认可或认证</p>
         </main>
 
         <button id="roll" class="roll" type="button">放映下一卷</button>
