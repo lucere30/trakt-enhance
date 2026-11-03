@@ -6,7 +6,7 @@
     "upstreamLinkBranch": "main",
     "backendHost": {
         "upstream": "proxy-modules.demojameson.de5.net",
-        "fork": "trakt-enhance-backend.vercel.app"
+        "fork": "lanternreel.vercel.app"
     },
     "repo": "lucere30/trakt-enhance",
     "branch": "main",
