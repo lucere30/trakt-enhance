@@ -4,7 +4,7 @@
 #!homepage=https://github.com/lucere30/trakt-enhance
 #!openUrl=https://apps.apple.com/app/id1514873602
 #!author=DemoJameson
-#!updatedTime=2026-11-03 22:50:45
+#!updatedTime=2026-11-03 23:27:15
 
 [Argument]
 fakeVipEnabled = switch, "true", tag=伪装成 VIP, desc=启用后伪装为 Trakt VIP 会员，移除 App 中的广告
@@ -21,7 +21,7 @@ eplayerxButtonOrder = select,"1","2","3","4","0",tag=EplayerX 跳转按钮,desc=
 forwardButtonOrder = select,"1","2","3","4","0",tag=Forward 跳转按钮,desc=序号代表在 Trakt 中的排序位置，0 不显示，默认 2
 infuseButtonOrder = select,"1","2","3","4","0",tag=Infuse 跳转按钮,desc=序号代表在 Trakt 中的排序位置，0 不显示，默认 3
 rexButtonOrder = select,"1","2","3","4","0",tag=Rex 跳转按钮,desc=序号代表在 Trakt 中的排序位置，0 不显示，默认 4
-backendBaseUrl = input, "https://trakt-enhance-backend.vercel.app", tag=翻译缓存接口, desc=用于批量获取 Trakt 的中文翻译，一般留空即可
+backendBaseUrl = input, "https://lanternreel.vercel.app", tag=翻译缓存接口, desc=用于批量获取 Trakt 的中文翻译，一般留空即可
 tamperAppAuthorizationEnabled = switch, "false", tag=篡改应用授权, desc=启用后将第三方 App 的 Trakt 授权篡改成 Trakt 官方 App，规避应用连接数的限制，请仅在需要时开启
 debugMode = select,"关闭","禁用本地缓存","禁用远端缓存","禁用所有缓存",tag=调试模式,desc=禁用本地缓存：不读写持久化存储；禁用远端缓存：不请求后端缓存接口；禁用所有缓存：两者皆禁用
 
@@ -35,7 +35,7 @@ response if ${url} ~= /^https:\/\/(?:auth\.)?trakt\.tv\/api\/auth\/oauth2\/autho
 # 记录篡改流程签发的设备码与 access/refresh token（auth/web 合并，api 由响应路由器处理）
 response if ${url} ~= /^https:\/\/(?:auth\.trakt\.tv|trakt\.tv)\/oauth\/(?:device\/code|device\/token|token)(?:\?.*)?$/i then script("https://raw.githubusercontent.com/lucere30/trakt-enhance/main/trakt_simplified_chinese/trakt_simplified_chinese.js", {${fakeVipEnabled}, ${chineseLocale}, ${posterImageMode}, ${translationEngine}, ${characterTranslationEnabled}, ${historyEpisodesMergedByShow}, ${eplayerxButtonOrder}, ${forwardButtonOrder}, ${infuseButtonOrder}, ${rexButtonOrder}, ${backendBaseUrl}, ${tamperAppAuthorizationEnabled}, ${debugMode}, ${chineseOnlyTranslation}, ${peopleTranslationEnabled}, ${personSearchTranslationMode}, ${chinesePosterEnabled}}) with tag="Trakt OAuth Token Response Rewrite", timeout=10, requires_body=true
 # 处理播放器 DeepLink 跳转
-request if ${url} ~= /^https:\/\/trakt-enhance-backend\.vercel\.app\/api\/redirect\?.*$/i then script("https://raw.githubusercontent.com/lucere30/trakt-enhance/main/trakt_simplified_chinese/trakt_simplified_chinese.js", {${fakeVipEnabled}, ${chineseLocale}, ${posterImageMode}, ${translationEngine}, ${characterTranslationEnabled}, ${historyEpisodesMergedByShow}, ${eplayerxButtonOrder}, ${forwardButtonOrder}, ${infuseButtonOrder}, ${rexButtonOrder}, ${backendBaseUrl}, ${tamperAppAuthorizationEnabled}, ${debugMode}, ${chineseOnlyTranslation}, ${peopleTranslationEnabled}, ${personSearchTranslationMode}, ${chinesePosterEnabled}}) with tag="Direct Redirect", timeout=10
+request if ${url} ~= /^https:\/\/lanternreel\.vercel\.app\/api\/redirect\?.*$/i then script("https://raw.githubusercontent.com/lucere30/trakt-enhance/main/trakt_simplified_chinese/trakt_simplified_chinese.js", {${fakeVipEnabled}, ${chineseLocale}, ${posterImageMode}, ${translationEngine}, ${characterTranslationEnabled}, ${historyEpisodesMergedByShow}, ${eplayerxButtonOrder}, ${forwardButtonOrder}, ${infuseButtonOrder}, ${rexButtonOrder}, ${backendBaseUrl}, ${tamperAppAuthorizationEnabled}, ${debugMode}, ${chineseOnlyTranslation}, ${peopleTranslationEnabled}, ${personSearchTranslationMode}, ${chinesePosterEnabled}}) with tag="Direct Redirect", timeout=10
 # SofaTime 中自定义播放器 Logo
 request if ${url} ~= /^https:\/\/image\.tmdb\.org\/t\/p\/w342\/[a-z0-9_-]+_logo\.webp(?:\?.*)?$/i then script("https://raw.githubusercontent.com/lucere30/trakt-enhance/main/trakt_simplified_chinese/trakt_simplified_chinese.js", {${fakeVipEnabled}, ${chineseLocale}, ${posterImageMode}, ${translationEngine}, ${characterTranslationEnabled}, ${historyEpisodesMergedByShow}, ${eplayerxButtonOrder}, ${forwardButtonOrder}, ${infuseButtonOrder}, ${rexButtonOrder}, ${backendBaseUrl}, ${tamperAppAuthorizationEnabled}, ${debugMode}, ${chineseOnlyTranslation}, ${peopleTranslationEnabled}, ${personSearchTranslationMode}, ${chinesePosterEnabled}}) with tag="TMDB Logo Redirect", timeout=10
 # 拦截 sync/history/episodes 请求，放大 limit
@@ -54,4 +54,4 @@ response if ${url} ~= /^https:\/\/api\.themoviedb\.org\/3\/watch\/providers\/(?:
 response if ${url} ~= /^https:\/\/api\.themoviedb\.org\/3\/(?:tv|movie)\/\d+\?.*watch(?:%2F|\/)providers.*$/i then script("https://raw.githubusercontent.com/lucere30/trakt-enhance/main/trakt_simplified_chinese/trakt_simplified_chinese.js", {${fakeVipEnabled}, ${chineseLocale}, ${posterImageMode}, ${translationEngine}, ${characterTranslationEnabled}, ${historyEpisodesMergedByShow}, ${eplayerxButtonOrder}, ${forwardButtonOrder}, ${infuseButtonOrder}, ${rexButtonOrder}, ${backendBaseUrl}, ${tamperAppAuthorizationEnabled}, ${debugMode}, ${chineseOnlyTranslation}, ${peopleTranslationEnabled}, ${personSearchTranslationMode}, ${chinesePosterEnabled}}) with tag="TMDB Detail Watch Providers", timeout=60, requires_body=true
 
 [MITM]
-hostname = apiz.trakt.tv, api.trakt.tv, auth.trakt.tv, trakt.tv, api.themoviedb.org, image.tmdb.org, trakt-enhance-backend.vercel.app
+hostname = apiz.trakt.tv, api.trakt.tv, auth.trakt.tv, trakt.tv, api.themoviedb.org, image.tmdb.org, lanternreel.vercel.app
