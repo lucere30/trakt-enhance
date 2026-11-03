@@ -35,7 +35,7 @@ test("按片名和年份找到电影，取评分最高、不带文字的剧照",
         fetchImpl,
         log: quiet,
     });
-    assert.equal(film.still, "https://image.tmdb.org/t/p/w780/best.jpg");
+    assert.equal(film.still, "https://image.tmdb.org/t/p/original/best.jpg");
     assert.equal(film.search, undefined, "输出里不带搜索条件");
 });
 
@@ -45,7 +45,7 @@ test("年份对不上时不带年份重新搜索；剧照列表失败时用搜�
         "query=Casablanca": { results: [{ id: 289, backdrop_path: "/search.jpg" }] },
     });
     const [film] = await buildFilms({ films: [{ line: "x", original: "", source: "y", search: { query: "Casablanca", year: 1942 } }], apiKey: "k", fetchImpl, log: quiet });
-    assert.equal(film.still, "https://image.tmdb.org/t/p/w780/search.jpg");
+    assert.equal(film.still, "https://image.tmdb.org/t/p/original/search.jpg");
     assert.equal(calls.filter((url) => url.includes("/search/movie")).length, 2);
 });
 

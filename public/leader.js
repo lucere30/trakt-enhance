@@ -1,35 +1,42 @@
-// 放映厅：老胶片片头倒计时（5 → 3），然后投出一帧剧照和一张台词字幕卡。点一下换下一卷。
+// 放映厅：第一卷前放一段老胶片片头倒计时（5 → 3），之后每部电影的剧照铺满屏幕、缓慢推移，
+// 台词叠在下方；每隔一段时间（或点一下）用带漏光的溶解转场换到下一部。可开启按情绪生成的配乐（score.js）。
 // 台词和剧照地址来自 /films.json（部署时由 scripts/build-films.mjs 生成），剧照直接从 TMDb 图片服务器加载；
-// 系统开启「减弱动态效果」时跳过动画。
+// 系统开启「减弱动态效果」时不放倒计时、不推移、不自动换片。
 (() => {
     // films.json 加载失败时用这一条兜底
-    const FALLBACK_FILMS = [{ line: "毕竟，明天又是新的一天。", original: "After all, tomorrow is another day.", source: "《乱世佳人》1939", still: null }];
+    const FALLBACK_FILMS = [{ line: "毕竟，明天又是新的一天。", original: "After all, tomorrow is another day.", source: "《乱世佳人》1939", mood: "sweeping", still: null }];
 
     const COUNT_FROM = 5;
     const COUNT_TO = 3;
     const BEAT_MS = 550;
-    const FLASH_MS = 220;
-    const STILL_FADE_MS = 900;
+    const FLASH_MS = 260;
+    const SHOW_MS = 9000; // 每部电影停留多久后自动换下一部
+    const TRANSITION_MS = 1600;
+    const TEXT_SWAP_MS = 520; // 转场开始后多久换上新台词
+    const IMAGE_WAIT_MS = 2500; // 下一张剧照还没加载好时最多等多久
     const FPS = 24;
 
     const canvas = document.getElementById("film");
     const ctx = canvas.getContext("2d");
     const card = document.getElementById("card");
-    const screen = document.getElementById("screen");
     const rollButton = document.getElementById("roll");
+    const soundButton = document.getElementById("sound");
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const score = window.LanternScore;
 
     let films = FALLBACK_FILMS;
     let deck = [];
     let width = 0;
     let height = 0;
     let dpr = 1;
-    let phase = "countdown";
+    let phase = "countdown"; // countdown → flash → showing ⇄ waiting → transition
     let phaseStart = 0;
     let lastFrame = 0;
     let reelNumber = 0;
-    let upcoming = null; // 倒计时期间预加载的下一卷 { film, image }
-    let current = null; // 正在放映的那一卷
+    let current = null; // { film, image, start, panFrom, panTo }
+    let previous = null;
+    let upcoming = null;
+    let textTimer = null;
     const grainTiles = [];
 
     // ---------- 数据 ----------
@@ -55,12 +62,18 @@
             image.referrerPolicy = "no-referrer";
             image.addEventListener("load", () => {
                 if (reduceMotion.matches && current?.image === image) {
-                    drawProjection(performance.now(), false);
+                    drawStatic();
                 }
             });
             image.src = film.still;
         }
-        upcoming = { film, image };
+        // 每部电影随机从左往右或从右往左推
+        const leftToRight = Math.random() < 0.5;
+        upcoming = { film, image, start: 0, panFrom: leftToRight ? 0.3 : 0.7, panTo: leftToRight ? 0.7 : 0.3 };
+    }
+
+    function isImageSettled(entry) {
+        return !entry?.image || entry.image.complete;
     }
 
     async function loadFilms() {
@@ -73,6 +86,7 @@
                     line: item.line,
                     original: typeof item.original === "string" ? item.original : "",
                     source: item.source,
+                    mood: typeof item.mood === "string" ? item.mood : "gentle",
                     // 只接受 TMDb 图片服务器的 https 地址
                     still: typeof item.still === "string" && item.still.startsWith("https://image.tmdb.org/") ? item.still : null,
                 }));
@@ -112,11 +126,11 @@
         canvas.width = width;
         canvas.height = height;
         if (reduceMotion.matches) {
-            drawProjection(performance.now(), false);
+            drawStatic();
         }
     }
 
-    // ---------- 绘制 ----------
+    // ---------- 绘制：胶片质感 ----------
 
     function drawGrain(alpha) {
         const pattern = grainTiles[Math.floor(Math.random() * grainTiles.length)];
@@ -192,22 +206,21 @@
         ctx.restore();
     }
 
+    // ---------- 绘制：片头倒计时 ----------
+
     function drawLeader(now) {
         const elapsed = now - phaseStart;
-        const beat = Math.floor(elapsed / BEAT_MS);
-        const number = COUNT_FROM - beat;
+        const number = COUNT_FROM - Math.floor(elapsed / BEAT_MS);
         const progress = (elapsed % BEAT_MS) / BEAT_MS;
         const flicker = 0.9 + Math.random() * 0.1;
-        const weave = (Math.random() - 0.5) * 2 * dpr;
         const cx = width / 2;
-        const cy = height / 2 + weave;
+        const cy = height / 2 + (Math.random() - 0.5) * 2 * dpr;
         const ring = Math.min(width, height) * 0.3;
 
         ctx.save();
         ctx.fillStyle = `rgb(${Math.round(150 * flicker)},${Math.round(141 * flicker)},${Math.round(124 * flicker)})`;
         ctx.fillRect(0, 0, width, height);
 
-        // 扫过的扇形
         ctx.fillStyle = "rgba(40,34,27,0.42)";
         ctx.beginPath();
         ctx.moveTo(cx, cy);
@@ -215,7 +228,6 @@
         ctx.closePath();
         ctx.fill();
 
-        // 十字线和圆环
         ctx.strokeStyle = "rgba(24,20,16,0.85)";
         ctx.lineWidth = 2 * dpr;
         ctx.beginPath();
@@ -233,7 +245,6 @@
             ctx.stroke();
         }
 
-        // 数字
         ctx.fillStyle = "#16120e";
         ctx.font = `700 ${Math.round(ring * 1.3)}px Georgia, "Times New Roman", serif`;
         ctx.textAlign = "center";
@@ -246,107 +257,156 @@
         drawVignette(0.72);
         drawSprockets(now, 0.9);
 
-        // 每一拍刚开始闪一下，像换了一格
         if (progress < 0.08) {
             ctx.fillStyle = "rgba(255,248,232,0.18)";
             ctx.fillRect(0, 0, width, height);
         }
     }
 
-    // 把剧照按 cover 方式画进字幕卡上方的银幕区域
-    function drawStill(now, animated, flicker) {
-        const image = current?.image;
-        if (!image?.complete || image.naturalWidth === 0) {
-            return;
-        }
-        const rect = screen.getBoundingClientRect();
-        if (rect.width === 0) {
-            return;
-        }
-        const weave = animated ? (Math.random() - 0.5) * 1.6 * dpr : 0;
-        const x = rect.left * dpr;
-        const y = rect.top * dpr + weave;
-        const w = rect.width * dpr;
-        const h = rect.height * dpr;
-        const scale = Math.max(w / image.naturalWidth, h / image.naturalHeight);
-        const sw = w / scale;
-        const sh = h / scale;
-        const sx = (image.naturalWidth - sw) / 2;
-        const sy = (image.naturalHeight - sh) / 2;
-        const fade = animated ? Math.min(1, (now - phaseStart) / STILL_FADE_MS) : 1;
+    // ---------- 绘制：剧照 ----------
 
+    function easeInOut(t) {
+        return t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
+    }
+
+    // 剧照按 cover 铺满屏幕，缓慢放大并横向推移（竖屏时能看到整幅画面）
+    function drawEntry(entry, now, alpha, animated) {
+        const image = entry?.image;
+        if (!image?.complete || image.naturalWidth === 0 || alpha <= 0) {
+            return;
+        }
+        const t = animated ? Math.min(1, Math.max(0, (now - entry.start) / (SHOW_MS + TRANSITION_MS * 2))) : 0.5;
+        const zoom = animated ? 1.04 + 0.08 * t : 1.04;
+        const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight) * zoom;
+        const drawW = image.naturalWidth * scale;
+        const drawH = image.naturalHeight * scale;
+        const pan = entry.panFrom + (entry.panTo - entry.panFrom) * easeInOut(t);
+        const x = -(drawW - width) * pan;
+        const y = -(drawH - height) * 0.42;
         ctx.save();
-        // 银幕边缘的漏光
-        ctx.shadowColor = `rgba(255,214,150,${0.35 * fade})`;
-        ctx.shadowBlur = 40 * dpr;
-        ctx.fillStyle = "#000";
-        ctx.fillRect(x, y, w, h);
-        ctx.shadowBlur = 0;
-        ctx.globalAlpha = fade * flicker;
-        ctx.filter = "sepia(0.35) contrast(1.08) saturate(0.85)";
-        ctx.drawImage(image, sx, sy, sw, sh, x, y, w, h);
+        ctx.globalAlpha = alpha;
+        ctx.filter = "sepia(0.3) contrast(1.06) saturate(0.85)";
+        ctx.drawImage(image, x, y, drawW, drawH);
         ctx.restore();
     }
 
-    function drawProjection(now, animated) {
-        const flicker = animated ? 0.94 + Math.random() * 0.06 : 1;
-        ctx.fillStyle = `rgb(${Math.round(16 * flicker)},${Math.round(14 * flicker)},${Math.round(12 * flicker)})`;
-        ctx.fillRect(0, 0, width, height);
-
-        // 放映机的光
-        const glow = ctx.createRadialGradient(width / 2, height / 2, 0, width / 2, height / 2, Math.max(width, height) * 0.7);
-        glow.addColorStop(0, `rgba(255,214,150,${0.09 * flicker})`);
-        glow.addColorStop(1, "rgba(255,214,150,0)");
-        ctx.fillStyle = glow;
-        ctx.fillRect(0, 0, width, height);
-
-        drawStill(now, animated, flicker);
-        drawGrain(animated ? 0.14 : 0.08);
-        if (animated) {
-            drawScratches(0.14, 0.28);
-        }
-        drawVignette(0.78);
-        drawSprockets(animated ? now : 0, 0.45);
-    }
-
-    function drawFlash(now) {
-        const t = (now - phaseStart) / FLASH_MS;
-        drawProjection(now, true);
-        ctx.fillStyle = `rgba(255,246,228,${Math.max(0, 1 - t)})`;
+    // 下半部分压暗，台词才看得清
+    function drawCaptionShade() {
+        const gradient = ctx.createLinearGradient(0, 0, 0, height);
+        gradient.addColorStop(0, "rgba(8,7,6,0.35)");
+        gradient.addColorStop(0.3, "rgba(8,7,6,0)");
+        gradient.addColorStop(0.5, "rgba(8,7,6,0.15)");
+        gradient.addColorStop(0.78, "rgba(8,7,6,0.82)");
+        gradient.addColorStop(1, "rgba(8,7,6,0.95)");
+        ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, width, height);
     }
 
-    // ---------- 流程 ----------
-
-    function showCard() {
-        if (!upcoming) {
-            prepareNext();
+    // 转场时一道暖色漏光从一侧扫过
+    function drawLightLeak(t) {
+        const strength = Math.sin(Math.PI * t) * 0.42;
+        if (strength <= 0.01) {
+            return;
         }
-        current = upcoming;
-        upcoming = null;
-        const { film } = current;
+        const cx = width * (-0.2 + 1.4 * t);
+        const gradient = ctx.createRadialGradient(cx, height * 0.35, 0, cx, height * 0.35, Math.max(width, height) * 0.75);
+        gradient.addColorStop(0, `rgba(255,186,110,${strength})`);
+        gradient.addColorStop(0.45, `rgba(255,120,60,${strength * 0.45})`);
+        gradient.addColorStop(1, "rgba(255,120,60,0)");
+        ctx.save();
+        ctx.globalCompositeOperation = "screen";
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, width, height);
+        ctx.restore();
+    }
+
+    function drawBackground(flicker) {
+        ctx.fillStyle = `rgb(${Math.round(14 * flicker)},${Math.round(12 * flicker)},${Math.round(10 * flicker)})`;
+        ctx.fillRect(0, 0, width, height);
+    }
+
+    function drawScene(now) {
+        const flicker = 0.95 + Math.random() * 0.05;
+        drawBackground(flicker);
+        if (phase === "transition") {
+            const t = Math.min(1, (now - phaseStart) / TRANSITION_MS);
+            drawEntry(previous, now, (1 - easeInOut(t)) * flicker, true);
+            drawEntry(current, now, easeInOut(t) * flicker, true);
+            drawCaptionShade();
+            drawLightLeak(t);
+        } else {
+            drawEntry(current, now, flicker, true);
+            drawCaptionShade();
+        }
+        drawGrain(0.13);
+        drawScratches(0.12, 0.26);
+        drawVignette(0.6);
+        drawSprockets(now, 0.4);
+        if (phase === "flash") {
+            const t = (now - phaseStart) / FLASH_MS;
+            ctx.fillStyle = `rgba(255,246,228,${Math.max(0, 1 - t)})`;
+            ctx.fillRect(0, 0, width, height);
+        }
+    }
+
+    function drawStatic() {
+        drawBackground(1);
+        drawEntry(current, 0, 1, false);
+        drawCaptionShade();
+        drawGrain(0.08);
+        drawVignette(0.6);
+        drawSprockets(0, 0.4);
+    }
+
+    // ---------- 台词卡 ----------
+
+    function setCaption(entry) {
         reelNumber += 1;
+        const { film } = entry;
         document.getElementById("reel").textContent = `第 ${reelNumber} 卷 · Reel ${String(reelNumber).padStart(2, "0")}`;
         document.getElementById("line").textContent = film.line;
         document.getElementById("original").textContent = film.original;
         document.getElementById("source").textContent = film.source;
-        screen.hidden = !film.still;
         card.classList.add("show");
         rollButton.classList.add("show");
+    }
+
+    function takeUpcoming(now) {
+        if (!upcoming) {
+            prepareNext();
+        }
+        previous = current;
+        current = upcoming;
+        current.start = now;
+        upcoming = null;
         prepareNext();
+        if (score?.isEnabled()) {
+            score.play(current.film.mood, current.film.source);
+        }
     }
 
-    function startCountdown(now) {
-        card.classList.remove("show");
-        rollButton.classList.remove("show");
-        phase = "countdown";
-        phaseStart = now;
-    }
+    // ---------- 流程 ----------
 
-    function startFlash(now) {
+    function startFirstFilm(now) {
         phase = "flash";
         phaseStart = now;
-        showCard();
+        takeUpcoming(now);
+        setCaption(current);
+    }
+
+    // force：等剧照超时后照样转场，只是这一卷先没有画面
+    function beginTransition(now, force = false) {
+        if (!force && !isImageSettled(upcoming)) {
+            phase = "waiting";
+            phaseStart = now;
+            return;
+        }
+        takeUpcoming(now);
+        phase = "transition";
+        phaseStart = now;
+        card.classList.remove("show");
+        clearTimeout(textTimer);
+        textTimer = setTimeout(() => setCaption(current), TEXT_SWAP_MS);
     }
 
     function frame(now) {
@@ -358,36 +418,65 @@
 
         if (phase === "countdown") {
             if (now - phaseStart >= (COUNT_FROM - COUNT_TO + 1) * BEAT_MS) {
-                startFlash(now);
+                startFirstFilm(now);
             } else {
                 drawLeader(now);
                 return;
             }
         }
-        if (phase === "flash") {
-            if (now - phaseStart >= FLASH_MS) {
-                phase = "projecting";
-            } else {
-                drawFlash(now);
-                return;
-            }
+        if (phase === "flash" && now - phaseStart >= FLASH_MS) {
+            phase = "showing";
+            phaseStart = now;
         }
-        drawProjection(now, true);
+        if (phase === "waiting" && (isImageSettled(upcoming) || now - phaseStart >= IMAGE_WAIT_MS)) {
+            beginTransition(now, true);
+        }
+        if (phase === "transition" && now - phaseStart >= TRANSITION_MS) {
+            phase = "showing";
+            phaseStart = now;
+            previous = null;
+        }
+        if (phase === "showing" && now - phaseStart >= SHOW_MS) {
+            beginTransition(now);
+        }
+        drawScene(now);
     }
 
     function advance() {
         const now = performance.now();
         if (reduceMotion.matches) {
-            showCard();
-            drawProjection(now, false);
+            takeUpcoming(now);
+            setCaption(current);
+            drawStatic();
             return;
         }
         if (phase === "countdown") {
-            startFlash(now);
-        } else {
-            startCountdown(now);
+            startFirstFilm(now);
+        } else if (phase === "showing" || phase === "flash") {
+            beginTransition(now);
         }
     }
+
+    function toggleSound() {
+        if (!score) {
+            return;
+        }
+        if (score.isEnabled()) {
+            score.disable();
+        } else {
+            score.enable(current?.film.mood ?? "gentle", current?.film.source ?? "");
+        }
+        const on = score.isEnabled();
+        soundButton.setAttribute("aria-pressed", String(on));
+        soundButton.textContent = on ? "配乐 · 开" : "配乐 · 关";
+    }
+
+    // 切回前台时重新计时，免得一回来就连跳几部
+    document.addEventListener("visibilitychange", () => {
+        if (!document.hidden && phase === "showing") {
+            phaseStart = performance.now();
+        }
+    });
 
     // ---------- 启动 ----------
 
@@ -395,11 +484,12 @@
     resize();
     window.addEventListener("resize", resize);
     document.body.addEventListener("click", (event) => {
-        if (event.target !== rollButton) {
+        if (event.target !== rollButton && event.target !== soundButton) {
             advance();
         }
     });
     rollButton.addEventListener("click", advance);
+    soundButton.addEventListener("click", toggleSound);
     document.addEventListener("keydown", (event) => {
         if ((event.key === " " || event.key === "Enter") && event.target === document.body) {
             event.preventDefault();
@@ -407,16 +497,18 @@
         }
     });
 
-    // 先开始倒计时，片单在倒计时期间加载好，第一卷就能带上剧照
     if (reduceMotion.matches) {
-        phase = "projecting";
+        phase = "showing";
         loadFilms().then(() => {
-            showCard();
-            drawProjection(performance.now(), false);
+            takeUpcoming(performance.now());
+            setCaption(current);
+            drawStatic();
         });
     } else {
-        startCountdown(performance.now());
+        phase = "countdown";
+        phaseStart = performance.now();
         requestAnimationFrame(frame);
+        // 片单在倒计时期间加载好，第一卷就能带上剧照
         loadFilms().then(prepareNext);
     }
 })();

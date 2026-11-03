@@ -1,34 +1,122 @@
 [
-    { "line": "愿原力与你同在。", "original": "May the Force be with you.", "source": "《星球大战》1977", "search": { "query": "Star Wars", "year": 1977 } },
+    {
+        "line": "愿原力与你同在。",
+        "original": "May the Force be with you.",
+        "source": "《星球大战》1977",
+        "mood": "heroic",
+        "search": {
+            "query": "Star Wars",
+            "year": 1977
+        }
+    },
     {
         "line": "人生就像一盒巧克力，你永远不知道下一块是什么味道。",
         "original": "Life was like a box of chocolates. You never know what you're gonna get.",
         "source": "《阿甘正传》1994",
-        "search": { "query": "Forrest Gump", "year": 1994 }
+        "mood": "gentle",
+        "search": {
+            "query": "Forrest Gump",
+            "year": 1994
+        }
     },
-    { "line": "我会回来的。", "original": "I'll be back.", "source": "《终结者》1984", "search": { "query": "The Terminator", "year": 1984 } },
-    { "line": "出来混，迟早要还的。", "original": "", "source": "《无间道》2002", "search": { "query": "Infernal Affairs", "year": 2002 } },
-    { "line": "曾经发生过的事情不可能忘记，只不过是想不起来而已。", "original": "", "source": "《千与千寻》2001", "search": { "query": "Spirited Away", "year": 2001 } },
-    { "line": "何必那么严肃？", "original": "Why so serious?", "source": "《蝙蝠侠：黑暗骑士》2008", "search": { "query": "The Dark Knight", "year": 2008 } },
-    { "line": "飞向宇宙，浩瀚无垠！", "original": "To infinity and beyond!", "source": "《玩具总动员》1995", "search": { "query": "Toy Story", "year": 1995 } },
-    { "line": "不疯魔，不成活。", "original": "", "source": "《霸王别姬》1993", "search": { "query": "Farewell My Concubine", "year": 1993 } },
-    { "line": "我们永远会有巴黎。", "original": "We'll always have Paris.", "source": "《卡萨布兰卡》1942", "search": { "query": "Casablanca", "year": 1942 } },
+    {
+        "line": "我会回来的。",
+        "original": "I'll be back.",
+        "source": "《终结者》1984",
+        "mood": "tense",
+        "search": {
+            "query": "The Terminator",
+            "year": 1984
+        }
+    },
+    {
+        "line": "出来混，迟早要还的。",
+        "original": "",
+        "source": "《无间道》2002",
+        "mood": "noir",
+        "search": {
+            "query": "Infernal Affairs",
+            "year": 2002
+        }
+    },
+    {
+        "line": "曾经发生过的事情不可能忘记，只不过是想不起来而已。",
+        "original": "",
+        "source": "《千与千寻》2001",
+        "mood": "waltz",
+        "search": {
+            "query": "Spirited Away",
+            "year": 2001
+        }
+    },
+    {
+        "line": "何必那么严肃？",
+        "original": "Why so serious?",
+        "source": "《蝙蝠侠：黑暗骑士》2008",
+        "mood": "dark",
+        "search": {
+            "query": "The Dark Knight",
+            "year": 2008
+        }
+    },
+    {
+        "line": "飞向宇宙，浩瀚无垠！",
+        "original": "To infinity and beyond!",
+        "source": "《玩具总动员》1995",
+        "mood": "playful",
+        "search": {
+            "query": "Toy Story",
+            "year": 1995
+        }
+    },
+    {
+        "line": "不疯魔，不成活。",
+        "original": "",
+        "source": "《霸王别姬》1993",
+        "mood": "pentatonic",
+        "search": {
+            "query": "Farewell My Concubine",
+            "year": 1993
+        }
+    },
+    {
+        "line": "我们永远会有巴黎。",
+        "original": "We'll always have Paris.",
+        "source": "《卡萨布兰卡》1942",
+        "mood": "romantic",
+        "search": {
+            "query": "Casablanca",
+            "year": 1942
+        }
+    },
     {
         "line": "希望是件好东西，也许是世上最好的东西。",
         "original": "Hope is a good thing, maybe the best of things.",
         "source": "《肖申克的救赎》1994",
-        "search": { "query": "The Shawshank Redemption", "year": 1994 }
+        "mood": "hopeful",
+        "search": {
+            "query": "The Shawshank Redemption",
+            "year": 1994
+        }
     },
     {
         "line": "如果非要给这份爱加一个期限，我希望是……一万年。",
         "original": "",
         "source": "《大话西游之大圣娶亲》1995",
-        "search": { "query": "A Chinese Odyssey Part Two", "year": 1995 }
+        "mood": "wistful",
+        "search": {
+            "query": "A Chinese Odyssey Part Two",
+            "year": 1995
+        }
     },
     {
         "line": "毕竟，明天又是新的一天。",
         "original": "After all, tomorrow is another day.",
         "source": "《乱世佳人》1939",
-        "search": { "query": "Gone with the Wind", "year": 1939 }
+        "mood": "sweeping",
+        "search": {
+            "query": "Gone with the Wind",
+            "year": 1939
+        }
     }
 ]

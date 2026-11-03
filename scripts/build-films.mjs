@@ -5,7 +5,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const TMDB_API = "https://api.themoviedb.org/3";
-const STILL_SIZE = "w780";
+// 剧照铺满整个屏幕，用原图尺寸（老电影一般是 1920×1080）
+const STILL_SIZE = "original";
 const TIMEOUT_MS = 8000;
 
 async function getJson(fetchImpl, url) {

@@ -38,28 +38,17 @@ canvas {
     inset: 0;
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-end;
     align-items: center;
     text-align: center;
-    padding: max(48px, env(safe-area-inset-top)) 32px max(96px, env(safe-area-inset-bottom));
+    padding: max(48px, env(safe-area-inset-top)) 32px max(140px, calc(env(safe-area-inset-bottom) + 116px));
     opacity: 0;
-    transition: opacity 1.2s ease;
+    transition: opacity 0.5s ease;
     pointer-events: none;
 }
 
 .card.show {
     opacity: 1;
-}
-
-.screen {
-    width: min(100%, 560px);
-    aspect-ratio: 16 / 9;
-    margin: 0 0 32px;
-    flex: none;
-}
-
-.screen[hidden] {
-    display: none;
 }
 
 .reel {
@@ -78,10 +67,13 @@ blockquote {
 
 .line {
     margin: 0;
+    text-wrap: balance;
     font-size: clamp(24px, 6.4vw, 44px);
     line-height: 1.5;
     font-weight: 600;
-    text-shadow: 0 0 18px rgba(255, 220, 160, 0.25);
+    text-shadow:
+        0 2px 18px rgba(0, 0, 0, 0.75),
+        0 0 18px rgba(255, 220, 160, 0.2);
 }
 
 .original {
@@ -148,6 +140,33 @@ blockquote {
     font-size: 10px;
     letter-spacing: 0.04em;
     color: rgba(166, 157, 143, 0.6);
+}
+
+.sound {
+    position: fixed;
+    top: max(16px, env(safe-area-inset-top));
+    right: max(40px, calc(env(safe-area-inset-right) + 32px));
+    min-height: 36px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(243, 237, 226, 0.28);
+    background: rgba(11, 10, 9, 0.5);
+    color: var(--ink);
+    font: inherit;
+    font-size: 13px;
+    letter-spacing: 0.15em;
+    cursor: pointer;
+    z-index: 2;
+}
+
+.sound[aria-pressed="true"] {
+    border-color: var(--amber);
+    color: var(--amber);
+}
+
+.sound:focus-visible {
+    outline: 2px solid var(--amber);
+    outline-offset: 3px;
 }
 
 @media (prefers-reduced-motion: reduce) {
