@@ -1,4 +1,5 @@
-// 把仓库里指向上游仓库（DemoJameson/Proxy.Modules）的链接改成指向本仓库。
+// 把仓库里指向上游仓库（DemoJameson/Proxy.Modules）的链接改成指向本仓库，
+// 并把上游作者的翻译缓存后端换成本仓库自己部署的后端（fork.config.json 的 backendHost）。
 // 幂等：重复运行不会产生额外改动。在仓库根目录运行：node fork/localize.mjs
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -10,7 +11,8 @@ const config = JSON.parse(fs.readFileSync(path.join(forkDir, "fork.config.json")
 const root = process.cwd();
 
 const up = config.upstreamRepo; // DemoJameson/Proxy.Modules
-const upBranch = config.upstreamBranch; // main
+// 上游文件里链接写的分支（不是同步底稿所在的分支）
+const upBranch = config.upstreamLinkBranch || config.upstreamBranch; // main
 const me = config.repo; // lucere30/trakt-enhance
 const myBranch = config.branch; // main
 
@@ -28,6 +30,11 @@ const replacements = [
     [enc(up), enc(me)],
     [esc(up), esc(me)],
 ];
+// 后端主机名：普通写法和正则转义写法（插件重写规则里的 proxy-modules\.demojameson\.de5\.net）
+const backend = config.backendHost;
+if (backend?.upstream && backend?.fork && backend.upstream !== backend.fork) {
+    replacements.push([backend.upstream, backend.fork], [esc(backend.upstream), esc(backend.fork)]);
+}
 
 // 不改：许可证、本定制目录、工作流、锁文件
 const skip = [/^LICENSE$/, /^fork\//, /^\.github\//, /^package-lock\.json$/, /(^|\/)node_modules\//];

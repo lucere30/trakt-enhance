@@ -91,11 +91,14 @@ git commit -am "fork: 更新 EplayerX 补丁" && git push
 
 补丁只改会进入插件的源码和测试；上游的 `README.md` 不发布，不用改。`public/index.html` 也不发布，但上游测试要求它的模块描述和插件描述一致，所以描述改了要一起改。
 
-## 仍然依赖上游的在线服务
+## 翻译缓存后端
 
-以下是上游作者部署的服务，本仓库没有替换：
+插件默认使用本仓库自己部署的后端 `https://trakt-enhance-backend.vercel.app`（Vercel 项目 `trakt-enhance-backend`，代码就是 `upstream-mit` 分支，缓存存在 Upstash Redis，TMDb key 由后端下发），不再依赖上游作者的 `proxy-modules.demojameson.de5.net`。
 
-- `proxy-modules.demojameson.de5.net`：翻译缓存后端，也负责下发 TMDb key（可在插件参数「翻译缓存接口」里改成自己部署的地址，部署方法见上游 `DEPLOY_VERCEL.md`）
-- `deeplx.demojameson.de5.net`：DeepLX 翻译
+- 换地址：改 `fork.config.json` 的 `backendHost.fork`。`localize.mjs` 会把源码、测试、插件重写规则和 MITM 主机名里的上游后端一起换掉，然后正常同步即可。
+- 重新部署后端（例如换了 Upstash 或 TMDb key）：在 `upstream-mit` 的检出目录里运行 `npx vercel deploy --prod`，环境变量在 Vercel 项目设置里改。部署说明见 `upstream-mit` 分支的 `DEPLOY_VERCEL.md`。
+- 后端只接受 User-Agent 含 `TraktSimplifiedChinese/<版本>` 的请求（插件会自动带上），其他请求返回 403。
+- Vercel 项目必须关闭「Deployment Protection → Vercel Authentication」，否则插件拿到的是 Vercel 登录页。
+- 在本地跑测试时不要设置 `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`：上游有几个后端测试检查「未配置 KV 时返回 500」，设置了会失败。
 
-这些服务由上游作者运营，不在 MIT 许可范围内；作者随时可能限制或停用（上游已给后端脚本接口加了 UA 锁），届时翻译缓存、TMDb 海报和 DeepLX 会失效，需要自己部署后端并在「翻译缓存接口」里填上地址。
+仍然依赖上游作者的只有 DeepLX 翻译（`deeplx.demojameson.de5.net`），而且只在「翻译引擎」选 DeepLX 时使用，默认是谷歌翻译。
