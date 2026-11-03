@@ -2,622 +2,295 @@
 <html lang="zh-CN">
     <head>
         <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Proxy.Modules</title>
-        <meta name="description" content="DemoJameson 的代理工具模块仓库，支持 Egern、Loon、Surge、Quantumult X 安装" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+        <title>Trakt 增强</title>
+        <meta name="description" content="Loon 插件：让 Trakt App 显示中文标题、简介和海报，并在影片详情页添加 EplayerX、Forward、Infuse、Rex 跳转按钮。" />
+        <meta name="color-scheme" content="light dark" />
+        <link rel="icon" href="/trakt.webp" type="image/webp" />
+        <link rel="apple-touch-icon" href="/trakt.webp" />
         <style>
-            @import url("https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;600;700&display=swap");
-
             :root {
-                --bg: #f3ecdf;
-                --paper: rgba(255, 251, 245, 0.82);
-                --paper-strong: #fffaf2;
-                --ink: #191613;
-                --muted: #6d6358;
-                --line: rgba(25, 22, 19, 0.12);
-                --line-strong: rgba(25, 22, 19, 0.28);
-                --copper: #b65a36;
-                --copper-deep: #8b3a20;
-                --forest: #27453c;
-                --gold: #d6b36a;
-                --shadow: 0 24px 80px rgba(64, 36, 18, 0.12);
-                --radius-xl: 30px;
-                --radius-lg: 24px;
-                --radius-md: 18px;
-                --font-body: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
-                --font-display: "Noto Serif SC", "Songti SC", serif;
+                --bg: #f6f5f2;
+                --surface: #ffffff;
+                --text: #1d1b19;
+                --muted: #6b6560;
+                --line: #e6e2dc;
+                --accent: #ed1c24;
+                --accent-text: #ffffff;
+                --accent-soft: #fdecec;
+                --radius: 16px;
             }
-
+            @media (prefers-color-scheme: dark) {
+                :root {
+                    --bg: #121110;
+                    --surface: #1c1a19;
+                    --text: #f2efeb;
+                    --muted: #a39d97;
+                    --line: #2f2c2a;
+                    --accent: #ff4b52;
+                    --accent-text: #ffffff;
+                    --accent-soft: #3a1c1d;
+                }
+            }
             * {
                 box-sizing: border-box;
             }
-
             html {
-                scroll-behavior: smooth;
+                -webkit-text-size-adjust: 100%;
             }
-
             body {
                 margin: 0;
-                min-height: 100vh;
-                color: var(--ink);
-                font-family: var(--font-body);
-                letter-spacing: 0.01em;
-                background:
-                    radial-gradient(circle at 15% 18%, rgba(182, 90, 54, 0.22), transparent 22%), radial-gradient(circle at 82% 12%, rgba(39, 69, 60, 0.18), transparent 18%),
-                    radial-gradient(circle at 50% 100%, rgba(214, 179, 106, 0.18), transparent 26%), linear-gradient(180deg, #f8f1e4 0%, #f1eadc 42%, #ece4d8 100%);
+                background: var(--bg);
+                color: var(--text);
+                font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+                line-height: 1.6;
             }
-
-            body::before {
-                content: "";
-                position: fixed;
-                inset: 0;
-                pointer-events: none;
-                opacity: 0.26;
-                background-image: linear-gradient(rgba(25, 22, 19, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(25, 22, 19, 0.03) 1px, transparent 1px);
-                background-size: 24px 24px;
-                mask-image: radial-gradient(circle at center, black 48%, transparent 92%);
-            }
-
-            a {
-                color: inherit;
-                text-decoration: none;
-            }
-
-            .page {
-                width: min(1180px, calc(100% - 28px));
+            main {
+                max-width: 720px;
                 margin: 0 auto;
-                padding: 28px 0 72px;
+                padding: max(40px, env(safe-area-inset-top)) 16px max(32px, env(safe-area-inset-bottom));
             }
-
-            .panel {
-                position: relative;
-                background: var(--paper);
-                border: 1px solid var(--line);
-                border-radius: var(--radius-xl);
-                box-shadow: var(--shadow);
-                backdrop-filter: blur(22px);
-                overflow: hidden;
-            }
-
-            .panel::after {
-                content: "";
-                position: absolute;
-                inset: 0;
-                pointer-events: none;
-                background: linear-gradient(130deg, rgba(255, 255, 255, 0.28), transparent 26%), linear-gradient(320deg, rgba(182, 90, 54, 0.08), transparent 34%);
-            }
-
             .hero {
-                padding: 34px;
+                text-align: center;
+                padding: 16px 0 32px;
             }
-
-            .hero-corner-link {
-                position: absolute;
-                top: 24px;
-                right: 24px;
-                z-index: 2;
-                width: 56px;
-                height: 56px;
-                min-height: 56px;
-                padding: 0;
-                border: none;
-                border-radius: 50%;
-                background: transparent;
-                color: var(--ink);
-                box-shadow: none;
-                backdrop-filter: none;
-                transition:
-                    transform 0.2s ease,
-                    color 0.2s ease;
+            .hero img {
+                width: 88px;
+                height: 88px;
+                border-radius: 22px;
+                box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
             }
-
-            .hero-corner-link:hover {
-                transform: translateY(-2px);
-                color: var(--copper-deep);
-            }
-
-            .hero-corner-link svg {
-                width: 40px;
-                height: 40px;
-                fill: currentColor;
-                overflow: visible;
-                transform: scale(1.14);
-                transform-origin: center;
-            }
-
-            h1,
-            h2,
-            h3 {
-                margin: 0;
-                font-family: var(--font-display);
-                font-weight: 600;
-                letter-spacing: -0.02em;
-            }
-
             h1 {
-                margin-top: 18px;
-                font-size: clamp(52px, 8vw, 92px);
-                line-height: 0.92;
-                font-weight: 700;
+                font-size: 32px;
+                line-height: 1.2;
+                margin: 20px 0 8px;
+                letter-spacing: 0.02em;
             }
-
-            .lead {
-                max-width: 760px;
-                margin: 18px 0 0;
+            .tagline {
                 color: var(--muted);
-                font-size: 17px;
-                line-height: 1.85;
-                letter-spacing: 0.015em;
+                font-size: 16px;
+                margin: 0 auto;
+                max-width: 32em;
             }
-
-            .module-card {
-                position: relative;
-                z-index: 1;
-            }
-
-            .hero-actions {
+            .actions {
                 display: flex;
                 flex-wrap: wrap;
+                justify-content: center;
                 gap: 12px;
-                margin-top: 26px;
+                margin-top: 28px;
             }
-
             .button {
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
-                min-height: 50px;
-                padding: 0 18px;
+                min-height: 48px;
+                padding: 0 22px;
                 border-radius: 999px;
-                border: 1px solid transparent;
-                font-family: var(--font-body);
-                font-weight: 700;
-                letter-spacing: 0.02em;
-                transition:
-                    transform 0.2s ease,
-                    border-color 0.2s ease,
-                    background-color 0.2s ease,
-                    color 0.2s ease;
-            }
-
-            .button:hover {
-                transform: translateY(-2px);
-            }
-
-            .button.primary {
-                background: var(--copper);
-                color: #fff8f2;
-            }
-
-            .button.primary:hover {
-                background: var(--copper-deep);
-            }
-
-            .button.primary.import-toggle,
-            .button.primary.import-toggle:hover,
-            .button.primary.import-toggle:active,
-            .button.primary.import-toggle:focus,
-            .button.primary.import-toggle:focus-visible,
-            .import-panel[open] .button.primary.import-toggle {
-                background: var(--copper);
-                color: #fff8f2;
-                border-color: transparent;
-                outline: none;
-                transform: none;
-            }
-
-            .button.secondary {
-                border-color: var(--line);
-                background: rgba(255, 255, 255, 0.58);
-            }
-
-            .button.secondary:hover {
-                border-color: var(--line-strong);
-                background: #fffefb;
-            }
-
-            .section-head {
-                display: flex;
-                justify-content: space-between;
-                align-items: end;
-                gap: 16px;
-                margin: 38px 0 18px;
-            }
-
-            .section-head h2 {
-                font-size: clamp(34px, 5vw, 50px);
-                line-height: 0.95;
-            }
-
-            .section-head p {
-                margin: 0;
-                max-width: 580px;
-                color: var(--muted);
-                line-height: 1.8;
-                text-align: right;
-            }
-
-            .catalog {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-                gap: 22px;
-            }
-
-            .module-card {
-                padding: 24px;
                 border: 1px solid var(--line);
-                border-radius: var(--radius-lg);
-                background: linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(249, 242, 232, 0.92)), linear-gradient(135deg, rgba(214, 179, 106, 0.12), transparent 42%);
-                transition:
-                    transform 0.22s ease,
-                    border-color 0.22s ease,
-                    box-shadow 0.22s ease;
-                animation: rise 0.6s ease both;
-            }
-
-            .module-card:hover {
-                transform: translateY(-4px);
-                border-color: rgba(182, 90, 54, 0.24);
-                box-shadow: 0 22px 56px rgba(70, 40, 22, 0.12);
-            }
-
-            .module-card:nth-child(2) {
-                animation-delay: 0.08s;
-            }
-
-            .module-head {
-                display: flex;
-                align-items: center;
-                gap: 16px;
-            }
-
-            .module-icon {
-                width: 58px;
-                height: 58px;
-                flex: 0 0 58px;
-                border-radius: 16px;
-                border: 1px solid rgba(25, 22, 19, 0.08);
-                background: rgba(255, 255, 255, 0.82);
-                box-shadow: 0 10px 24px rgba(64, 36, 18, 0.08);
-                object-fit: cover;
-            }
-
-            .module-card h3 {
-                font-size: clamp(24px, 2.6vw, 28px);
-                line-height: 1.05;
-            }
-
-            .module-card p {
-                margin: 14px 0 0;
-                color: var(--muted);
-                line-height: 1.8;
-                letter-spacing: 0.015em;
-                min-height: 86px;
-            }
-
-            .import-group {
-                margin-top: 22px;
-                padding-top: 18px;
-                border-top: 1px solid var(--line);
-            }
-
-            .tool-grid {
-                display: grid;
-                grid-template-columns: repeat(4, minmax(0, 1fr));
-                gap: 10px;
-                margin-top: 14px;
-            }
-
-            .tool-link {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                min-height: 104px;
-                padding: 16px;
-                border: 1px solid var(--line);
-                border-radius: var(--radius-md);
-                background: rgba(255, 255, 255, 0.7);
-                transition:
-                    transform 0.2s ease,
-                    border-color 0.2s ease,
-                    background-color 0.2s ease;
-            }
-
-            .tool-link:hover {
-                transform: translateY(-2px);
-                border-color: rgba(39, 69, 60, 0.24);
-                background: #fffefb;
-            }
-
-            .tool-link .label {
+                background: var(--surface);
+                color: var(--text);
+                font: inherit;
                 font-size: 16px;
-                font-weight: 700;
-                text-align: center;
-                letter-spacing: 0.02em;
-            }
-
-            .import-toggle {
-                width: 100%;
-                justify-content: space-between;
-                padding: 0 20px;
+                font-weight: 600;
+                text-decoration: none;
                 cursor: pointer;
             }
-
-            .import-toggle::after {
-                content: "+";
-                font-size: 22px;
-                line-height: 1;
-                transition: transform 0.2s ease;
+            .button.primary {
+                background: var(--accent);
+                border-color: var(--accent);
+                color: var(--accent-text);
             }
-
-            .import-panel[open] .import-toggle::after {
-                transform: rotate(45deg);
+            .button:focus-visible {
+                outline: 3px solid var(--accent);
+                outline-offset: 2px;
             }
-
-            .import-panel summary {
+            .url {
+                margin: 16px auto 0;
+                max-width: 100%;
+                font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                font-size: 12px;
+                color: var(--muted);
+                overflow-wrap: anywhere;
+            }
+            section {
+                margin-top: 24px;
+                background: var(--surface);
+                border: 1px solid var(--line);
+                border-radius: var(--radius);
+                padding: 20px;
+            }
+            h2 {
+                font-size: 18px;
+                margin: 0 0 12px;
+            }
+            ul {
+                margin: 0;
+                padding: 0;
                 list-style: none;
             }
-
-            .import-panel summary::-webkit-details-marker {
-                display: none;
+            li {
+                padding: 12px 0;
+                border-top: 1px solid var(--line);
             }
-
-            .folder-link {
-                margin-top: 16px;
-                justify-content: space-between;
-                width: 100%;
-                padding: 0 18px;
+            li:first-child {
+                border-top: 0;
+                padding-top: 0;
             }
-
-            .link-row {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 10px;
-                margin-top: 16px;
+            li:last-child {
+                padding-bottom: 0;
             }
-
-            @keyframes rise {
-                from {
-                    opacity: 0;
-                    transform: translateY(16px);
-                }
-                to {
-                    opacity: 1;
-                    transform: translateY(0);
-                }
+            li strong {
+                display: block;
             }
-
-            @media (max-width: 920px) {
-                .section-head {
-                    flex-direction: column;
-                    align-items: flex-start;
-                }
-
-                .section-head p {
-                    text-align: left;
-                }
+            li span {
+                color: var(--muted);
+                font-size: 14px;
             }
-
-            @media (max-width: 720px) {
-                .page {
-                    width: min(100% - 18px, 1180px);
-                    padding: 14px 0 44px;
-                }
-
-                .hero {
-                    padding: 22px;
-                }
-
-                .hero-corner-link {
-                    top: 14px;
-                    right: 14px;
-                    width: 38px;
-                    height: 38px;
-                    min-height: 38px;
-                }
-
-                .hero-corner-link svg {
-                    width: 24px;
-                    height: 24px;
-                }
-
-                h1 {
-                    font-size: clamp(32px, 11vw, 48px);
-                }
-
-                .module-card {
-                    padding: 20px;
-                }
-
-                .module-card h3 {
-                    font-size: 24px;
-                }
-
-                .tool-grid {
-                    grid-template-columns: repeat(4, minmax(0, 1fr));
-                    gap: 8px;
-                }
-
-                .tool-link {
-                    min-height: 72px;
-                    padding: 12px 8px;
-                }
-
-                .tool-link .label {
-                    font-size: 13px;
-                }
-
-                .module-card p {
-                    min-height: 0;
-                }
+            ol {
+                margin: 0;
+                padding-left: 1.4em;
+            }
+            ol li {
+                border: 0;
+                padding: 4px 0;
+            }
+            p {
+                margin: 0;
+            }
+            p + p {
+                margin-top: 8px;
+            }
+            .note {
+                color: var(--muted);
+                font-size: 14px;
+            }
+            a {
+                color: var(--accent);
+            }
+            footer {
+                margin-top: 32px;
+                text-align: center;
+                color: var(--muted);
+                font-size: 13px;
+            }
+            footer p + p {
+                margin-top: 4px;
+            }
+            .toast {
+                position: fixed;
+                left: 50%;
+                bottom: max(24px, env(safe-area-inset-bottom));
+                transform: translateX(-50%);
+                background: var(--text);
+                color: var(--bg);
+                padding: 10px 18px;
+                border-radius: 999px;
+                font-size: 14px;
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity 0.2s;
+            }
+            .toast.show {
+                opacity: 1;
             }
         </style>
     </head>
     <body>
-        <main class="page">
-            <section class="panel hero">
-                <a class="button hero-corner-link" href="https://github.com/DemoJameson/Proxy.Modules" target="_blank" rel="noreferrer" aria-label="GitHub 仓库">
-                    <svg viewBox="0 0 16 16" aria-hidden="true">
-                        <path
-                            d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.47 7.47 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"
-                        ></path>
-                    </svg>
-                </a>
-                <div>
-                    <h1>Proxy.Modules</h1>
-                    <p class="lead">个人使用的代理工具脚本仓库</p>
-                    <div class="hero-actions">
-                        <a
-                            class="button secondary"
-                            href="http://boxjs.com/#/sub/add/https%3A%2F%2Fraw.githubusercontent.com%2FDemoJameson%2FProxy.Modules%2Fmain%2Fboxjs.json"
-                            target="_blank"
-                            rel="noreferrer"
-                            >BoxJs 订阅</a
-                        >
-                    </div>
+        <main>
+            <header class="hero">
+                <img src="/trakt.webp" alt="" width="88" height="88" />
+                <h1>Trakt 增强</h1>
+                <p class="tagline">Loon 插件：让 Trakt App 显示中文标题、简介和海报（简体 / 港台繁体），并在影片详情页添加 EplayerX、Forward、Infuse、Rex 跳转按钮。</p>
+                <div class="actions">
+                    <a class="button primary" id="install" href="#">添加到 Loon</a>
+                    <button class="button" id="copy" type="button">复制插件地址</button>
+                    <a class="button" href="https://github.com/lucere30/trakt-enhance" target="_blank" rel="noreferrer">GitHub</a>
                 </div>
+                <p class="url" id="plugin-url"></p>
+            </header>
+
+            <section>
+                <h2>功能</h2>
+                <ul>
+                    <li>
+                        <strong>中文标题、简介和海报</strong>
+                        <span>剧集、电影、单集、评论、片单和演职员表显示中文，海报换成 TMDb 中文海报；可选简体、台湾繁体、香港繁体。</span>
+                    </li>
+                    <li>
+                        <strong>只翻译中文影视</strong>
+                        <span>默认只翻译原始语言为中文的剧集和电影，其他语言保留 Trakt 原文；可在插件设置里关闭。</span>
+                    </li>
+                    <li>
+                        <strong>中文影视用中文原海报</strong>
+                        <span>中文剧集和电影用原产地区的中文海报（台剧用台版、港片用港版），其他影视按「海报语言」。</span>
+                    </li>
+                    <li>
+                        <strong>人物页和人物搜索翻译</strong>
+                        <span>人物详情页可单独开关；人物搜索可选全部翻译、只翻译华人和日韩名、只翻译华人名或关闭。</span>
+                    </li>
+                    <li>
+                        <strong>播放器跳转按钮</strong>
+                        <span>影片详情页添加 EplayerX、Forward、Infuse、Rex 按钮，顺序和显示可在插件设置里调整。</span>
+                    </li>
+                    <li>
+                        <strong>历史记录按剧集合并</strong>
+                        <span>历史页面剧集类别的已观看记录按电视剧合并显示。</span>
+                    </li>
+                </ul>
             </section>
 
-            <section class="section-head" id="catalog">
-                <h2>脚本列表</h2>
+            <section>
+                <h2>安装</h2>
+                <ol>
+                    <li>在装有 Loon 的设备上点「添加到 Loon」，或复制插件地址后在 Loon 的「插件」里手动添加。</li>
+                    <li>确认 Loon 已开启 MitM，并已安装和信任证书。</li>
+                    <li>打开 Trakt App 使用即可。插件选项在 Loon 的插件详情里设置。</li>
+                </ol>
             </section>
 
-            <section class="catalog" id="module-list"></section>
+            <section>
+                <h2>关于本站</h2>
+                <p>本站是插件使用的翻译缓存后端，保存翻译、海报和人物名的缓存，只响应插件发出的请求。</p>
+                <p class="note">缓存和 TMDb 数据仅供个人使用。</p>
+            </section>
+
+            <footer>
+                <p>
+                    脚本基于 <a href="https://github.com/DemoJameson/Proxy.Modules" target="_blank" rel="noreferrer">DemoJameson/Proxy.Modules</a> 2026-10-28 版本（MIT 许可）修改。
+                </p>
+                <p><a href="https://github.com/lucere30/trakt-enhance" target="_blank" rel="noreferrer">lucere30/trakt-enhance</a></p>
+            </footer>
         </main>
+        <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
         <script>
-            const tools = {
-                loon: {
-                    id: "loon",
-                    name: "Loon",
-                    buildImportUrl(resourceUrl) {
-                        return `https://www.nsloon.com/openloon/import?plugin=${encodeURIComponent(resourceUrl)}`;
-                    },
-                },
-                surge: {
-                    id: "surge",
-                    name: "Surge",
-                    buildImportUrl(resourceUrl) {
-                        return `surge:///install-module?url=${encodeURIComponent(resourceUrl)}`;
-                    },
-                },
-                egern: {
-                    id: "egern",
-                    name: "Egern",
-                    buildImportUrl(resourceUrl, moduleItem) {
-                        return `egern:/modules/new?name=${encodeURIComponent(moduleItem.name)}&url=${encodeURIComponent(resourceUrl)}`;
-                    },
-                },
-                qx: {
-                    id: "qx",
-                    name: "QX",
-                    buildImportUrl(resourceUrl, moduleItem) {
-                        const payload = {
-                            rewrite_remote: [`${resourceUrl}, tag=${moduleItem.qxTag}, enabled=true`],
-                        };
-                        return `https://quantumult.app/x/open-app/add-resource?remote-resource=${encodeURIComponent(JSON.stringify(payload))}`;
-                    },
-                },
-            };
+            const PLUGIN_URL = "https://raw.githubusercontent.com/lucere30/trakt-enhance/main/trakt_simplified_chinese/trakt_simplified_chinese.plugin";
 
-            const modules = [
-                {
-                    id: "trakt_simplified_chinese",
-                    name: "Trakt 增强",
-                    description:
-                        "Trakt App 各页面从英文改为简体中文或港台繁体，包括海报；历史页面剧集类别的已观看记录按电视剧合并；Trakt 的影片详情页添加 Forward、Infuse、Rex 跳转按钮；部分兼容其它使用了 Trakt API 的应用。",
-                    qxTag: "Trakt Simplified Chinese",
-                    icon: "https://raw.githubusercontent.com/DemoJameson/Proxy.Modules/main/trakt_simplified_chinese/images/trakt.webp",
-                    githubFolder: "https://github.com/DemoJameson/Proxy.Modules/tree/main/trakt_simplified_chinese",
-                    resources: {
-                        loon: "https://raw.githubusercontent.com/DemoJameson/Proxy.Modules/main/trakt_simplified_chinese/trakt_simplified_chinese.plugin",
-                        surge: "https://raw.githubusercontent.com/DemoJameson/Proxy.Modules/main/trakt_simplified_chinese/trakt_simplified_chinese.sgmodule",
-                        egern: "https://raw.githubusercontent.com/DemoJameson/Proxy.Modules/main/trakt_simplified_chinese/trakt_simplified_chinese.plugin",
-                        qx: "https://raw.githubusercontent.com/DemoJameson/Proxy.Modules/main/trakt_simplified_chinese/trakt_simplified_chinese.snippet",
-                    },
-                },
-                {
-                    id: "imdbapi_redirect_to_tiffara",
-                    name: "修复 imdbapi.dev",
-                    description: "将 imdbapi.dev 及其所有子域名的请求重定向到 tiffara.com，保留子域名、路径和查询参数",
-                    qxTag: "修复 imdbapi.dev",
-                    icon: "https://raw.githubusercontent.com/DemoJameson/Proxy.Modules/main/imdbapi_redirect_to_tiffara/imdb.png",
-                    githubFolder: "https://github.com/DemoJameson/Proxy.Modules/tree/main/imdbapi_redirect_to_tiffara",
-                    resources: {
-                        loon: "https://raw.githubusercontent.com/DemoJameson/Proxy.Modules/main/imdbapi_redirect_to_tiffara/imdbapi_redirect_to_tiffara.plugin",
-                        surge: "https://raw.githubusercontent.com/DemoJameson/Proxy.Modules/main/imdbapi_redirect_to_tiffara/imdbapi_redirect_to_tiffara.sgmodule",
-                        egern: "https://raw.githubusercontent.com/DemoJameson/Proxy.Modules/main/imdbapi_redirect_to_tiffara/imdbapi_redirect_to_tiffara.plugin",
-                        qx: "https://raw.githubusercontent.com/DemoJameson/Proxy.Modules/main/imdbapi_redirect_to_tiffara/imdbapi_redirect_to_tiffara.snippet",
-                    },
-                },
-            ];
+            document.getElementById("install").href = `https://www.nsloon.com/openloon/import?plugin=${encodeURIComponent(PLUGIN_URL)}`;
+            document.getElementById("plugin-url").textContent = PLUGIN_URL;
 
-            function _findModule(moduleId) {
-                return modules.find((moduleItem) => moduleItem.id === moduleId) || null;
+            const toast = document.getElementById("toast");
+            let toastTimer;
+            function showToast(message) {
+                toast.textContent = message;
+                toast.classList.add("show");
+                clearTimeout(toastTimer);
+                toastTimer = setTimeout(() => toast.classList.remove("show"), 1800);
             }
 
-            function findResource(moduleItem, toolId) {
-                return moduleItem?.resources ? moduleItem.resources[toolId] : "";
-            }
-
-            function buildImportUrl(moduleItem, toolId) {
-                const tool = tools[toolId];
-                const resourceUrl = findResource(moduleItem, toolId);
-                if (!tool || !resourceUrl) {
-                    return "#";
+            document.getElementById("copy").addEventListener("click", async () => {
+                try {
+                    await navigator.clipboard.writeText(PLUGIN_URL);
+                    showToast("已复制插件地址");
+                } catch {
+                    const range = document.createRange();
+                    range.selectNodeContents(document.getElementById("plugin-url"));
+                    const selection = window.getSelection();
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                    showToast("请手动复制选中的地址");
                 }
-                return tool.buildImportUrl(resourceUrl, moduleItem);
-            }
-
-            function escapeHtml(value) {
-                return String(value).replace(/[&<>"']/g, (char) => {
-                    const map = {
-                        "&": "&amp;",
-                        "<": "&lt;",
-                        ">": "&gt;",
-                        '"': "&quot;",
-                        "'": "&#39;",
-                    };
-                    return map[char] || char;
-                });
-            }
-
-            function renderModuleCard(moduleItem) {
-                const toolCards = ["egern", "loon", "surge", "qx"]
-                    .map((toolId) => {
-                        const tool = tools[toolId];
-                        const importUrl = buildImportUrl(moduleItem, toolId);
-                        return `
-          <a class="tool-link" href="${importUrl}">
-            <span class="label">${tool.name}</span>
-          </a>
-        `;
-                    })
-                    .join("");
-
-                return `
-        <article class="module-card">
-          <div class="module-head">
-            <img class="module-icon" src="${escapeHtml(moduleItem.icon)}" alt="">
-            <h3>${escapeHtml(moduleItem.name)}</h3>
-          </div>
-          <p>${escapeHtml(moduleItem.description || "")}</p>
-          <details class="import-group import-panel">
-            <summary class="button primary import-toggle">安装</summary>
-            <div class="tool-grid">${toolCards}</div>
-          </details>
-          <div class="link-row">
-            <a class="button secondary folder-link" href="${moduleItem.githubFolder}" target="_blank" rel="noreferrer">查看代码</a>
-          </div>
-        </article>
-      `;
-            }
-
-            function renderModules() {
-                const list = document.getElementById("module-list");
-                list.innerHTML = modules.map(renderModuleCard).join("");
-            }
-            renderModules();
+            });
         </script>
     </body>
 </html>
