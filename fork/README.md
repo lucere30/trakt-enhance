@@ -1,4 +1,4 @@
-# 定制与上游同步
+# 定制与构建
 
 本仓库只发布 Loon 版「Trakt 增强」插件，脚本来自 [DemoJameson/Proxy.Modules](https://github.com/DemoJameson/Proxy.Modules) 2026-10-28 的版本 `c652548`（MIT 许可）。
 
@@ -8,8 +8,8 @@
 
 所以本仓库固定在最后一个 MIT 版本 `c652548`（fix(trakt): 兼容 following activities 的 /v3 前缀路由），不再跟随上游：
 
-- 这份上游代码保存在本仓库的 `upstream-mit` 分支，同步从这里取，不依赖上游仓库是否还在、历史是否再被改写。
-- `fork.config.json` 的 `requiredLicense` 要求底稿 `LICENSE` 第一行是 `MIT License`，否则 `sync.sh` 拒绝构建。以后即使误把底稿换成新许可的版本，也不会发布出去。
+- 这份上游代码保存在本仓库的 `upstream-mit` 分支，构建从这里取，不依赖上游仓库是否还在、历史是否再被改写。
+- `fork.config.json` 的 `requiredLicense` 要求底稿 `LICENSE` 第一行是 `MIT License`，否则 `build.sh` 拒绝构建。以后即使误把底稿换成新许可的版本，也不会发布出去。
 - 上游 10-30 之后的修复（官方 App Universal Link 授权回调、EplayerX 授权例外等）和依赖更新不会进来。
 
 ## 仓库里有什么
@@ -20,9 +20,9 @@
 | `trakt_simplified_chinese/trakt_simplified_chinese.js` | 插件加载的脚本（自动生成） |
 | `trakt_simplified_chinese/images/` | 图标与播放器 logo（来自上游） |
 | `LICENSE` | `c652548` 的 MIT 许可证，按许可要求保留 |
-| `README.md`、`fork/`、`.github/` | 本仓库自己维护的说明、定制和同步工作流 |
+| `README.md`、`fork/` | 本仓库自己维护的说明、定制和构建脚本 |
 
-其余上游文件（源码、测试、Surge/QX 版本、后端等）只在同步构建时临时使用，不提交到本仓库。
+其余上游文件（源码、测试、Surge/QX 版本、后端等）只在构建时临时使用，不提交到本仓库。
 
 ## 定制内容
 
@@ -46,29 +46,25 @@
    这些记录和下面的出生地记录共用 `shared/fork-store.mjs`；「调试模式」选了禁用本地缓存或禁用所有缓存时，既不读也不写。
    - 「中文影视用中文原海报」（默认开启）：原始语言为中文的剧集和电影固定按“原片语言”取 TMDb 中文海报（优先原产地区版本，如台剧用台版、港片用港版；没有中文海报时保留 Trakt 原图），不受「海报语言」影响；「海报语言」只管其他语言的影视。「海报语言」选原图时，非中文影视完全不请求海报。粤语片（语言代码 `cn`）同时接受标为 `zh` 的中文海报。
 
-   这个补丁自带的测试列在 `fork.config.json` 的 `extraTests` 里，同步时一起运行。
+   这个补丁自带的测试列在 `fork.config.json` 的 `extraTests` 里，构建时一起运行。
 4. **插件选项显示顺序**（`argument-order.mjs`）：按 `fork.config.json` 的 `argumentOrder` 调整 Loon 插件 `[Argument]` 段的上下顺序（伪装成 VIP → 翻译 → 显示 → 跳转按钮 → 高级）。只改显示顺序，传给脚本的参数顺序不变；上游新增的选项自动排在最后。
 
-## 同步
+## 构建
 
-`.github/workflows/sync-upstream.yml` 每天运行一次（北京时间 08:23；也可在 Actions 页面手动运行），执行 `fork/sync.sh`。底稿固定不变，所以只有本仓库的定制（`fork/`、`README.md`、`.github/`）改动后才会重新构建，其余时候直接跳过：
+插件不再自动同步或定时构建。改了定制（补丁、`fork.config.json`、`localize.mjs` 等）后，在仓库根目录手动运行 `bash fork/build.sh`，确认无误后推送：
 
 1. 拉取 `upstream-mit` 分支（上游 `c652548`），确认它的 `LICENSE` 是 MIT；
 2. 按顺序重放 `fork/patches/*.patch`（3-way 合并）；
-3. 运行 `localize.mjs` 改写链接；
-4. `npm ci && npm test`，其中会重新生成插件和脚本；
+3. 运行 `localize.mjs` 改写链接和后端地址；
+4. `npm ci && npm test`，其中会重新生成插件和脚本（测试时会去掉 Redis/KV 环境变量，避免误报）；
 5. 运行 `extraTests` 列出的补丁自带测试，然后用 `argument-order.mjs` 调整插件选项的显示顺序；
-6. 只挑出 `fork.config.json` 里 `keep` 列出的文件，连同 `overlay` 列出的本仓库文件，在 `main` 上追加一个 `sync:` 提交并推送。
+6. 只挑出 `fork.config.json` 里 `keep` 列出的文件，连同 `overlay` 列出的本仓库文件，在当前分支上生成一个 `build:` 提交。
 
-任何一步失败，`main` 保持不变，并自动开一个标题为「上游同步失败，需要处理」的 issue。
-
-公开仓库 60 天没有活动时 GitHub 会自动停用定时任务。为防止长期没有新提交导致同步停掉，定时运行时会调用一次“启用工作流”接口，并在最近一次提交超过 45 天时推一个空的 `chore: 保活` 提交。如果仍被停用，到 Actions 页面点 “Enable workflow” 即可恢复。
-
-`fork/sync-state` 记录当前对应的上游提交和本仓库文件指纹，两者都没变时直接跳过（生成的脚本带构建时间，不能用产物是否变化来判断）。本地强制重建：`FORCE_SYNC=1 bash fork/sync.sh`。
+任何一步失败都会报错退出，当前分支不变。生成的脚本带构建时间，所以每次构建都会产生新提交。
 
 ## 修改定制
 
-补丁都基于 `upstream-mit`。改完补丁推送到 `main` 后，在 Actions 页面手动运行一次「跟随上游同步」（或等第二天的定时运行）。以 0001 为例（0002 同理，有多个补丁时按编号依次打上，只重新导出改动的那个）：
+补丁都基于 `upstream-mit`。改完补丁后在 `main` 上运行 `bash fork/build.sh`，再推送。以 0001 为例（0002 同理，有多个补丁时按编号依次打上，只重新导出改动的那个）：
 
 ```bash
 git clone https://github.com/lucere30/trakt-enhance.git && cd trakt-enhance
@@ -86,16 +82,17 @@ git format-patch -1 --stdout -- . \
   ':(exclude)boxjs.json' > /tmp/new.patch
 git switch main
 cp /tmp/new.patch fork/patches/0001-restore-eplayerx.patch
-git commit -am "fork: 更新 EplayerX 补丁" && git push
+git commit -am "fork: 更新 EplayerX 补丁"
+bash fork/build.sh && git push
 ```
 
 补丁只改会进入插件的源码和测试；上游的 `README.md` 不发布，不用改。`public/index.html` 也不发布，但上游测试要求它的模块描述和插件描述一致，所以描述改了要一起改。
 
 ## 翻译缓存后端
 
-插件默认使用本仓库自己部署的后端 `https://lanternreel.vercel.app`（Vercel 项目 `trakt-enhance-backend`；旧地址 `trakt-enhance-backend.vercel.app` 仍指向同一个项目，供还没更新的插件使用，代码是 `backend` 分支：`upstream-mit` 加上本仓库自己的首页 `public/index.html`，缓存存在 Upstash Redis，TMDb key 由后端下发），不再依赖上游作者的 `proxy-modules.demojameson.de5.net`。
+插件默认使用本仓库自己部署的后端 `https://lanternreel.vercel.app`（Vercel 项目 `trakt-enhance-backend`，代码是 `backend` 分支：`upstream-mit` 加上本仓库自己的首页 `public/index.html`，缓存存在 Upstash Redis，TMDb key 由后端下发），不再依赖上游作者的 `proxy-modules.demojameson.de5.net`。
 
-- 换地址：改 `fork.config.json` 的 `backendHost.fork`。`localize.mjs` 会把源码、测试、插件重写规则和 MITM 主机名里的上游后端一起换掉，然后正常同步即可。
+- 换地址：改 `fork.config.json` 的 `backendHost.fork`。`localize.mjs` 会把源码、测试、插件重写规则和 MITM 主机名里的上游后端一起换掉，然后运行 `bash fork/build.sh` 重新构建即可。
 - 重新部署后端（例如改了首页，或换了 Upstash / TMDb key）：在 `backend` 分支的检出目录里运行 `npx vercel deploy --prod`，环境变量在 Vercel 项目设置里改。不要从 `upstream-mit` 部署，否则首页会变回上游作者的模块列表。部署说明见 `DEPLOY_VERCEL.md`。
 - 后端只接受 User-Agent 含 `TraktSimplifiedChinese/<版本>` 的请求（插件会自动带上），其他请求返回 403。
 - Vercel 项目必须关闭「Deployment Protection → Vercel Authentication」，否则插件拿到的是 Vercel 登录页。

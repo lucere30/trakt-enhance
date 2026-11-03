@@ -23,4 +23,4 @@ https://raw.githubusercontent.com/lucere30/trakt-enhance/main/trakt_simplified_c
 - 新增选项「人物搜索翻译」（默认全部翻译）：人物搜索（含本月生日人物列表）翻译谁——全部翻译 / 华人和日韩名 / 仅华人名 / 关闭
 - 以上两项单独生效，不受「只翻译中文影视」影响
 
-上游从 2026-10-30 起改用限制 EplayerX 作者和用户的 source-available 许可，所以本仓库停在最后一个 MIT 版本，不再跟随上游更新。GitHub Actions 每天检查一次，只在本仓库的定制改动时重新构建，详见 [`fork/README.md`](fork/README.md)。
+上游从 2026-10-30 起改用限制 EplayerX 作者和用户的 source-available 许可，所以本仓库停在最后一个 MIT 版本，不再跟随上游更新，也不再自动同步；需要改动时手动运行 `fork/build.sh` 重新构建，详见 [`fork/README.md`](fork/README.md)。

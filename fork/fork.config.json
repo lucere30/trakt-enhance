@@ -18,8 +18,7 @@
     ],
     "overlay": [
         "README.md",
-        "fork",
-        ".github"
+        "fork"
     ],
     "extraTests": [
         "tests/trakt_translation_scope.test.mjs",

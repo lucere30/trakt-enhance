@@ -11,7 +11,7 @@ const config = JSON.parse(fs.readFileSync(path.join(forkDir, "fork.config.json")
 const root = process.cwd();
 
 const up = config.upstreamRepo; // DemoJameson/Proxy.Modules
-// 上游文件里链接写的分支（不是同步底稿所在的分支）
+// 上游文件里链接写的分支（不是构建底稿所在的分支）
 const upBranch = config.upstreamLinkBranch || config.upstreamBranch; // main
 const me = config.repo; // lucere30/trakt-enhance
 const myBranch = config.branch; // main
