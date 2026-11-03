@@ -95,8 +95,9 @@ module.exports = async (req, res) => {
         res.setHeader("Allow", "GET, POST");
         res.status(405).json({ error: "Method not allowed" });
     } catch (error) {
+        console.error(`api/trakt/list-translations.js failed:`, error);
         res.status(500).json({
-            error: error instanceof Error ? error.message : String(error),
+            error: "Internal server error",
         });
     }
 };

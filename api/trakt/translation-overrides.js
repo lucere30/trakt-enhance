@@ -26,8 +26,9 @@ module.exports = async (req, res) => {
         res.setHeader("Vercel-CDN-Cache-Control", "public, s-maxage=300, stale-while-revalidate=300");
         res.status(200).json(await readAllTranslationOverridesFromKv(kvConfig));
     } catch (error) {
+        console.error(`api/trakt/translation-overrides.js failed:`, error);
         res.status(500).json({
-            error: error instanceof Error ? error.message : String(error),
+            error: "Internal server error",
         });
     }
 };

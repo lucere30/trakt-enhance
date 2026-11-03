@@ -1,3 +1,4 @@
+const crypto = require("node:crypto");
 const {
     buildCacheKeyForLocale,
     buildOverrideField,
@@ -19,6 +20,13 @@ function getHeader(req, name) {
     return headers[name] || headers[name.toLowerCase()] || headers[name.toUpperCase()] || "";
 }
 
+// 等长时逐字节比较耗时相同，避免通过响应时间猜出令牌
+function timingSafeEqualString(actual, expected) {
+    const a = Buffer.from(String(actual));
+    const b = Buffer.from(String(expected));
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 function authorizeAdmin(req, res) {
     const token = process.env.ADMIN_TOKEN || "";
     if (!token) {
@@ -26,7 +34,7 @@ function authorizeAdmin(req, res) {
         return false;
     }
 
-    if (getHeader(req, "authorization") !== `Bearer ${token}`) {
+    if (!timingSafeEqualString(getHeader(req, "authorization"), `Bearer ${token}`)) {
         res.status(401).json({ error: "Unauthorized" });
         return false;
     }
@@ -244,8 +252,9 @@ module.exports = async (req, res) => {
         res.setHeader("Allow", "GET, PUT, DELETE, POST");
         res.status(405).json({ error: "Method not allowed" });
     } catch (error) {
+        console.error(`api/trakt/translations/admin.js failed:`, error);
         res.status(500).json({
-            error: error instanceof Error ? error.message : String(error),
+            error: "Internal server error",
         });
     }
 };

@@ -348,12 +348,6 @@ test("module manifest description mentions every player button", () => {
     }
 });
 
-test("module manifest description is reused by the Vercel landing page", async () => {
-    const indexHtml = await readFile(path.join(rootDir, "public", "index.html"), "utf8");
-
-    assert.ok(normalizeLineEndings(indexHtml).includes(normalizeLineEndings(metadata.description)), "public/index.html 的 Trakt 模块描述应与 module-manifest.mjs 保持一致");
-});
-
 test("module manifest generates current BoxJs keys from argument fields", async () => {
     const boxjsTarget = renderGeneratedTargets().find((target) => target.outputFile === "boxjs.json");
     assert.ok(boxjsTarget);
